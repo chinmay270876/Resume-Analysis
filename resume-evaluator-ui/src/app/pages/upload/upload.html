@@ -1,0 +1,187 @@
+<div class="hero-container">
+
+  <div class="background-blur blur1"></div>
+  <div class="background-blur blur2"></div>
+
+  <!-- HERO -->
+  <div class="hero-section">
+    <div class="hero-icon">🚀</div>
+    <h1>AI Resume Intelligence Platform</h1>
+    <p>
+      Upload up to 5 resumes and let AI perform complete candidate analysis,
+      interview generation, evaluation and podcast creation.
+    </p>
+  </div>
+
+  <!-- FEATURES -->
+  <div class="features-grid">
+    <div class="feature-card">
+      <div class="feature-icon">📄</div>
+      <h3>Resume Analysis</h3>
+      <p>AI extracts skills, experience and strengths instantly.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🎤</div>
+      <h3>Interview Generator</h3>
+      <p>Create realistic AI interviews from resumes.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📊</div>
+      <h3>Candidate Scoring</h3>
+      <p>Evaluate candidates using structured AI metrics.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🎧</div>
+      <h3>Podcast Creation</h3>
+      <p>Convert interviews into engaging audio reports.</p>
+    </div>
+  </div>
+
+  <!-- UPLOAD CARD -->
+  <div class="upload-card">
+    <div class="upload-header">
+      <div class="upload-title">
+        <span class="upload-badge">AI Powered</span>
+        <h2>Upload Resumes</h2>
+        <p>
+          Drag &amp; drop or browse PDF resumes (1–{{ maxFiles }} files, max 10MB each).
+          Resumes are analysed one by one in a queue.
+        </p>
+      </div>
+    </div>
+
+    <!-- DRAG & DROP ZONE -->
+    <div
+      class="upload-zone"
+      [class.drag-over]="isDragOver()"
+      [class.disabled]="isProcessing() || tasks().length >= maxFiles"
+      [attr.aria-disabled]="(isProcessing() || tasks().length >= maxFiles) ? true : null"
+      (dragover)="onDragOver($event)"
+      (dragleave)="onDragLeave($event)"
+      (drop)="onDrop($event)"
+      (keydown)="onZoneKeydown($event)"
+      (click)="onZoneClick($event)"
+      role="button"
+      tabindex="0"
+      aria-label="Upload resumes by dropping PDF files here or clicking Choose Resumes">
+      <div class="glow-circle"></div>
+      <div class="upload-content">
+        <div class="upload-icon">📄</div>
+        <h3>Drag &amp; Drop Resumes</h3>
+        <p>PDF format • Maximum size 10MB • Up to {{ maxFiles }} files</p>
+        <label class="choose-file-btn">
+          Choose Resumes
+          <input
+            type="file"
+            accept=".pdf"
+            multiple
+            [disabled]="isProcessing() || tasks().length >= maxFiles"
+            (change)="onFilesSelected($event)"
+            hidden />
+        </label>
+      </div>
+    </div>
+
+    <!-- ERROR -->
+    <div *ngIf="error()" class="error-card">❌ {{ error() }}</div>
+
+    <!-- SELECTED FILES -->
+    <div *ngIf="tasks().length > 0" class="selected-list">
+      <div class="selected-list-head">
+        <span>Selected Resumes ({{ tasks().length }}/{{ maxFiles }})</span>
+      </div>
+
+      <div class="selected-item" *ngFor="let task of tasks(); trackBy: trackByTask">
+        <span class="sel-order">#{{ task.order }}</span>
+        <span class="sel-icon">📄</span>
+        <span class="sel-name" [title]="task.fileName">{{ task.fileName }}</span>
+        <span class="sel-size">{{ (task.fileSize / 1024 / 1024).toFixed(2) }} MB</span>
+        <button
+          class="sel-remove"
+          type="button"
+          *ngIf="!isProcessing()"
+          (click)="removeResume(task.id)"
+          title="Remove"
+          aria-label="Remove">✕</button>
+      </div>
+    </div>
+
+    <!-- ACTIONS -->
+    <div class="upload-actions" *ngIf="tasks().length > 0">
+      <button
+        class="upload-btn"
+        type="button"
+        [disabled]="isProcessing() || tasks().length === 0"
+        (click)="startProcessing()">
+        <span *ngIf="!isProcessing()">🚀 Analyze {{ tasks().length }} Resume(s)</span>
+        <span *ngIf="isProcessing()">🤖 Processing Resumes...</span>
+      </button>
+
+      <button
+        class="reset-btn"
+        type="button"
+        *ngIf="!isProcessing()"
+        (click)="resetAll()">
+        Clear All
+      </button>
+    </div>
+  </div>
+
+  <!-- OVERALL BATCH PROGRESS -->
+  <div *ngIf="showQueue() && overall().total > 0" class="overall-card" role="status" aria-live="polite">
+    <div class="overall-head">
+      <div class="overall-title">
+        <span class="overall-badge">Batch Progress</span>
+        <h2 *ngIf="!isProcessing()">Analysis Complete</h2>
+        <h2 *ngIf="isProcessing()">Uploading {{ overall().total }} resumes</h2>
+      </div>
+      <div class="overall-stats">
+        <div class="overall-stat">
+          <span class="stat-value">{{ overall().completed }} / {{ overall().total }}</span>
+          <span class="stat-label">Completed</span>
+        </div>
+        <div class="overall-stat" *ngIf="overall().failed > 0">
+          <span class="stat-value failed">{{ overall().failed }}</span>
+          <span class="stat-label">Failed</span>
+        </div>
+        <div class="overall-stat">
+          <span class="stat-value">{{ formatTime(overall().elapsedSeconds) }}</span>
+          <span class="stat-label">Overall Time</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="overall-actions" *ngIf="!isProcessing() && overall().completed > 0">
+      <button
+        class="batch-download-btn"
+        type="button"
+        [disabled]="downloadingBatch()"
+        (click)="onDownloadBatchReport()">
+        <span *ngIf="!downloadingBatch()" class="btn-text">⬇ Download Evaluation Report</span>
+        <span *ngIf="downloadingBatch()" class="btn-content">
+          <span class="loader-sm"></span>
+          Downloading...
+        </span>
+      </button>
+    </div>
+
+    <div class="overall-progress">
+      <div class="overall-progress-fill" [style.width.%]="overallProgress()"></div>
+    </div>
+  </div>
+
+  <!-- RESUME QUEUE -->
+  <div *ngIf="showQueue()" class="queue">
+    <app-resume-card
+      *ngFor="let task of tasks(); trackBy: trackByTask"
+      [task]="task"
+      [canRemove]="!isProcessing()"
+      [downloadingReportId]="downloadingReportId()"
+      (remove)="removeResume($event)"
+      (downloadTranscript)="onDownloadTranscript($event)"
+      (downloadReport)="onDownloadReport($event)"
+      (downloadPodcast)="onDownloadPodcast($event)">
+    </app-resume-card>
+  </div>
+
+</div>

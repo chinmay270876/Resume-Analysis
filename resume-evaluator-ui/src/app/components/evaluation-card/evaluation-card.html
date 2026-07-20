@@ -1,0 +1,49 @@
+<div *ngIf="evaluation" class="result-card evaluation-card">
+  <div class="section-header">
+    <h2>📊 Evaluation</h2>
+  </div>
+
+  <div class="evaluation-top">
+    <div class="score-ring" [class.score-high]="(evaluation.score ?? -1) >= 90" [class.score-good]="(evaluation.score ?? -1) >= 70 && (evaluation.score ?? -1) < 90" [class.score-mid]="(evaluation.score ?? -1) >= 50 && (evaluation.score ?? -1) < 70" [class.score-low]="(evaluation.score ?? -1) >= 0 && (evaluation.score ?? -1) < 50" [class.score-na]="evaluation.score === null || evaluation.score === undefined">
+      <svg class="ring-svg" viewBox="0 0 120 120">
+        <circle class="ring-bg" cx="60" cy="60" r="52" />
+        <circle class="ring-progress" cx="60" cy="60" r="52" [style.strokeDashoffset]="ringOffset(evaluation.score)" />
+      </svg>
+      <div class="score-inner">
+        <span class="score-value">{{ evaluation.score ?? 'N/A' }}</span>
+        <span class="score-label">Score</span>
+      </div>
+    </div>
+
+    <div class="result-summary">
+      <div class="result-badge" [class.selected]="isSelected()" [class.rejected]="isRejected()" [class.hold]="isHold()">
+        {{ resultLabel() }}
+      </div>
+      <p class="result-text">{{ evaluation.result }}</p>
+      <p *ngIf="evaluation.recommendation" class="recommendation-text">{{ evaluation.recommendation }}</p>
+    </div>
+  </div>
+
+  <div class="evaluation-sections">
+    <div class="eval-section" *ngIf="evaluation.skills?.length">
+      <h3>Skills</h3>
+      <div class="chips">
+        <span *ngFor="let skill of evaluation.skills; trackBy: trackByIndex" class="chip skill-chip">{{ skill }}</span>
+      </div>
+    </div>
+
+    <div class="eval-section" *ngIf="evaluation.strengths?.length">
+      <h3>Strengths</h3>
+      <div class="chips">
+        <span *ngFor="let strength of evaluation.strengths; trackBy: trackByIndex" class="chip strength-chip">{{ strength }}</span>
+      </div>
+    </div>
+
+    <div class="eval-section" *ngIf="evaluation.weaknesses?.length">
+      <h3>Weaknesses</h3>
+      <div class="chips">
+        <span *ngFor="let weakness of evaluation.weaknesses; trackBy: trackByIndex" class="chip weakness-chip">{{ weakness }}</span>
+      </div>
+    </div>
+  </div>
+</div>

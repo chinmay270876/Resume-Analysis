@@ -1,0 +1,18 @@
+Convert the following interview transcript into a professional podcast conversation.
+
+Requirements:
+
+- Sound natural and engaging
+- Introduce the candidate
+- Add podcast-style transitions
+- Keep all important interview content
+- Return plain text only
+- IMPORTANT: Every single line of dialogue MUST start with exactly one of these two prefixes:
+    "Interviewer: " for the interviewer's lines
+    "Candidate: " for the candidate's lines
+  Do NOT use markdown bold (**), brackets, or any other formatting in the speaker labels.
+  Do NOT include any section headers, titles, or stage directions.
+
+Interview:
+
+{{interviewTranscript}}

@@ -1,0 +1,89 @@
+<div *ngIf="analysis()" class="result-card analysis-card">
+  <div class="section-header">
+    <h2>📄 Resume Analysis</h2>
+  </div>
+
+  <div class="candidate-info">
+    <div class="info-item">
+      <div class="info-icon">👤</div>
+      <div class="info-content">
+        <span class="info-label">Candidate Name</span>
+        <span class="info-value">{{ analysis()?.candidateName }}</span>
+      </div>
+    </div>
+    <div class="info-item">
+      <div class="info-icon">📧</div>
+      <div class="info-content">
+        <span class="info-label">Email</span>
+        <span class="info-value">{{ analysis()?.email }}</span>
+      </div>
+    </div>
+    <div class="info-item">
+      <div class="info-icon">📱</div>
+      <div class="info-content">
+        <span class="info-label">Phone</span>
+        <span class="info-value">{{ analysis()?.phone }}</span>
+      </div>
+    </div>
+    <div class="info-item">
+      <div class="info-icon">🏢</div>
+      <div class="info-content">
+        <span class="info-label">Current Company</span>
+        <span class="info-value">{{ analysis()?.currentCompany }}</span>
+      </div>
+    </div>
+    <div class="info-item">
+      <div class="info-icon">📅</div>
+      <div class="info-content">
+        <span class="info-label">Years of Experience</span>
+        <span class="info-value">{{ analysis()?.yearsOfExperience }}</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="analysis-section">
+    <h3>Skills</h3>
+    <div class="chips" *ngIf="analysis()?.skills?.length; else emptyChips">
+      <span *ngFor="let skill of analysis()?.skills; trackBy: trackByIndex" class="chip skill-chip">{{ skill }}</span>
+    </div>
+    <ng-template #emptyChips>
+      <p class="empty-text">No skills extracted.</p>
+    </ng-template>
+  </div>
+
+  <div class="analysis-section">
+    <h3>Strengths</h3>
+    <div class="chips" *ngIf="analysis()?.strengths?.length; else emptyChips">
+      <span *ngFor="let strength of analysis()?.strengths; trackBy: trackByIndex" class="chip strength-chip">{{ strength }}</span>
+    </div>
+    <ng-template #emptyChips>
+      <p class="empty-text">No strengths identified.</p>
+    </ng-template>
+  </div>
+
+  <div class="analysis-section">
+    <h3>Weaknesses</h3>
+    <div class="chips" *ngIf="analysis()?.weaknesses?.length; else emptyChips">
+      <span *ngFor="let weakness of analysis()?.weaknesses; trackBy: trackByIndex" class="chip weakness-chip">{{ weakness }}</span>
+    </div>
+    <ng-template #emptyChips>
+      <p class="empty-text">No weaknesses identified.</p>
+    </ng-template>
+  </div>
+
+  <div class="analysis-section experience-section">
+    <h3>Experience</h3>
+    <ul class="experience-list" *ngIf="experienceItems().length; else emptyExperience">
+      <li *ngFor="let entry of experienceItems(); trackBy: trackByIndex" class="experience-item">
+        <span class="experience-dot"></span>
+        <div class="experience-content">
+          <div class="experience-header">{{ entry.header }}</div>
+          <div class="experience-body" *ngIf="entry.body">{{ entry.body }}</div>
+        </div>
+      </li>
+    </ul>
+    <ng-template #emptyExperience>
+      <p class="empty-text">No experience provided.</p>
+    </ng-template>
+  </div>
+</div>

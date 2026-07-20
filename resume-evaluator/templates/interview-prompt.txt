@@ -1,0 +1,31 @@
+Create a realistic 20-minute interview.
+
+Requirements:
+- Introduction
+- Technical Questions
+- Scenario-Based Questions
+- Behavioral Questions
+- Closing
+
+Candidate Profile:
+{{analysis}}
+
+Output Format:
+- Return ONLY a valid JSON object.
+- Do NOT include markdown, explanations, or any text outside the JSON object.
+- The object must contain a single key "transcript" whose value is an array.
+- Each object in the "transcript" array must have a "speaker" ('Interviewer' or 'Candidate') and a "text" field.
+
+Example:
+{
+  "transcript": [
+    {
+      "speaker": "Interviewer",
+      "text": "Good morning! Thank you for joining us today. Could you please introduce yourself?"
+    },
+    {
+      "speaker": "Candidate",
+      "text": "Good morning! Thank you for having me. My name is ..."
+    }
+  ]
+}

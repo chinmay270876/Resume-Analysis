@@ -1,0 +1,137 @@
+<div class="resume-card" [class]="'status-' + task().status">
+  <!-- THIN PROGRESS BAR (top) -->
+  <div class="card-progress" role="progressbar" [attr.aria-valuenow]="task().progress" aria-valuemin="0" aria-valuemax="100">
+    <div class="card-progress-fill" [style.width.%]="task().progress"></div>
+  </div>
+
+  <div class="card-body">
+    <!-- HEADER -->
+    <div class="card-head">
+      <div class="card-title">
+        <span class="order-badge">#{{ task().order }}</span>
+        <span class="file-icon">📄</span>
+        <div class="file-meta">
+          <span class="file-name" [title]="task().fileName">{{ task().fileName }}</span>
+          <span class="file-size">{{ (task().fileSize / 1024 / 1024).toFixed(2) }} MB</span>
+        </div>
+      </div>
+
+      <div class="card-head-right">
+        <span class="status-pill" [class]="'tone-' + statusMeta().tone">
+          {{ statusMeta().label }}
+        </span>
+        <button
+          *ngIf="canRemove && (isQueued() || isFailed())"
+          class="remove-btn"
+          type="button"
+          (click)="onRemove()"
+          title="Remove resume"
+          aria-label="Remove resume">
+          ✕
+        </button>
+      </div>
+    </div>
+
+    <!-- PROGRESS ROW: stage + timer -->
+    <div class="progress-row">
+      <div class="stage-line">
+        <ng-container *ngIf="isProcessing() || isCompleted(); else waitingState">
+          <span class="stage-dot" [class.spin]="isProcessing()"></span>
+          <span class="stage-text">
+            {{ isCompleted() ? 'Completed' : stages[task().stageIndex] }}
+          </span>
+        </ng-container>
+        <ng-template #waitingState>
+          <span class="stage-dot waiting"></span>
+          <span class="stage-text muted">
+            {{ isFailed() ? 'Processing stopped' : 'Waiting...' }}
+          </span>
+        </ng-template>
+      </div>
+
+      <div class="timer" [class.failed]="isFailed()">
+        <ng-container *ngIf="isCompleted(); else liveTimer">
+          <span class="timer-done">{{ completedLabel() }}</span>
+        </ng-container>
+        <ng-template #liveTimer>
+          <span class="timer-value">{{ formattedTime() }}</span>
+        </ng-template>
+      </div>
+    </div>
+
+    <!-- STAGE STEPS -->
+    <div class="stage-steps" *ngIf="isProcessing() || isCompleted() || isFailed()">
+      <div
+        *ngFor="let stage of stages; let i = index"
+        class="stage-step"
+        [class.done]="stageState(i) === 'done'"
+        [class.active]="stageState(i) === 'active'">
+        <span class="step-marker">
+          <span class="step-check" *ngIf="stageState(i) === 'done'">✓</span>
+          <span class="step-pulse" *ngIf="stageState(i) === 'active'"></span>
+        </span>
+        <span class="step-label">{{ stage }}</span>
+      </div>
+    </div>
+
+    <!-- ERROR -->
+    <div class="card-error" *ngIf="isFailed() && task().error">
+      ❌ {{ task().error }}
+    </div>
+
+    <!-- RESULTS (Completed only) -->
+    <div class="card-results" *ngIf="isCompleted() && result() as r">
+      <div class="result-head">
+        <div class="result-candidate">
+          <span class="result-avatar">👤</span>
+          <div>
+            <div class="result-name">{{ candidateName() }}</div>
+            <div class="result-score">
+              Score:
+              <strong>{{ overallScore() ?? 'N/A' }}</strong>
+            </div>
+          </div>
+        </div>
+        <span class="rec-badge" [class.pass]="isPass()" [class.fail]="!isPass()">
+          {{ recommendation() }}
+        </span>
+      </div>
+
+      <app-analysis-card [analysis]="r.analysis"></app-analysis-card>
+      <app-evaluation-card [evaluation]="r.evaluation"></app-evaluation-card>
+      <app-interview-viewer [transcript]="r.parsedTranscript ?? null"></app-interview-viewer>
+
+      <div class="podcast-block" *ngIf="r.raw.podcastPath">
+        <h4>🎧 Podcast</h4>
+        <audio controls [src]="r.raw.podcastPath"></audio>
+      </div>
+
+      <div class="card-actions">
+        <button
+          class="action-btn primary"
+          type="button"
+          (click)="onDownloadTranscript()">
+          📄 Download Transcript
+        </button>
+        <button
+          class="action-btn"
+          type="button"
+          (click)="onDownloadReport()"
+          [disabled]="isDownloadingReport()">
+          <span *ngIf="!isDownloadingReport()">📊 {{ reportButtonLabel() }}</span>
+          <span *ngIf="isDownloadingReport()" class="btn-content">
+            <span class="loader-sm"></span>
+            Downloading...
+          </span>
+        </button>
+        <a
+          class="action-btn"
+          *ngIf="r.raw.podcastPath"
+          [href]="r.raw.podcastPath"
+          download>
+          🎧 Download Podcast
+        </a>
+      </div>
+    </div>
+  </div>
+</div>

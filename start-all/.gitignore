@@ -1,0 +1,28 @@
+# Node
+**/node_modules/
+npm-debug.log*
+
+# Environment
+**/.env
+**/.env.local
+
+# Build outputs
+**/dist/
+**/.angular/
+**/.cache/
+
+# Generated files
+**/results/
+**/output/
+**/uploads/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

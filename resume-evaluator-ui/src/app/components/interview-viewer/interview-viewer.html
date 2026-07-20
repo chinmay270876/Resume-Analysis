@@ -1,0 +1,26 @@
+<div *ngIf="transcript" class="result-card transcript-card">
+  <div class="transcript-header">
+    <h2>🎤 Interview Transcript</h2>
+    <h3 class="transcript-title">{{ transcript.title }}</h3>
+    <p *ngIf="transcript.summary" class="transcript-summary"><em>{{ transcript.summary }}</em></p>
+  </div>
+
+  <div class="transcript-container" *ngIf="transcript.transcriptTurns?.length; else noTurns">
+    <div *ngFor="let turn of transcript.transcriptTurns" class="transcript-turn" [class.interviewer]="turn.speaker === 'Interviewer'" [class.candidate]="turn.speaker === 'Candidate'">
+      <div class="turn-wrapper">
+        <div class="turn-bubble">
+          <div class="turn-header">
+            <span class="speaker-badge" [class.interviewer-badge]="turn.speaker === 'Interviewer'" [class.candidate-badge]="turn.speaker === 'Candidate'">
+              {{ turn.speaker === 'Interviewer' ? '🟦 Interviewer' : turn.speaker === 'Candidate' ? '🟩 Candidate' : turn.speaker }}
+            </span>
+          </div>
+          <div class="turn-text">{{ turn.text }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <ng-template #noTurns>
+    <p class="no-turns">No transcript turns available.</p>
+  </ng-template>
+</div>

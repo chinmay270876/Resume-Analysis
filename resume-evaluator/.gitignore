@@ -1,0 +1,12 @@
+# Dependencies
+/node_modules
+
+# Environment variables
+.env
+
+# Uploads
+/uploads
+
+# Output
+/output
+/results

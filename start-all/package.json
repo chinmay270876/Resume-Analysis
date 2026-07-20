@@ -1,0 +1,14 @@
+{
+  "name": "start-all",
+  "version": "1.0.0",
+  "description": "Start resume-evaluator backend and resume-evaluator-ui frontend together",
+  "private": true,
+  "scripts": {
+    "backend": "cd ../resume-evaluator && node server.js",
+    "frontend": "cd ../resume-evaluator-ui && ng serve",
+    "start": "concurrently -n BACKEND,FRONTEND -c green,cyan \"npm run backend\" \"npm run frontend\""
+  },
+  "dependencies": {
+    "concurrently": "^10.0.3"
+  }
+}
