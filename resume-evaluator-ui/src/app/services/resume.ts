@@ -3,13 +3,12 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Observable, throwError } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { UploadResult, UploadProgress } from '../models';
+import { environment } from '../../environments/environment';
 
 @Injectable({
     providedIn: 'root'
 })
 export class ResumeService {
-
-    private apiUrl = '/api/upload-resume';
 
     constructor(
         private http: HttpClient
@@ -23,8 +22,10 @@ export class ResumeService {
             file
         );
 
+        const url = `${environment.apiUrl}/upload-resume`;
+
         return this.http.post<UploadResult>(
-            this.apiUrl,
+            url,
             formData
         ).pipe(
             catchError(this.handleError)
@@ -32,7 +33,7 @@ export class ResumeService {
     }
 
     downloadReport(filename?: string): Observable<Blob> {
-        const url = filename ? `/api/download-report/${encodeURIComponent(filename)}` : '/api/download-report';
+        const url = filename ? `${environment.apiUrl}/download-report/${encodeURIComponent(filename)}` : `${environment.apiUrl}/download-report`;
         return this.http.get(url, {
             responseType: 'blob'
         }).pipe(
@@ -41,7 +42,7 @@ export class ResumeService {
     }
 
     downloadTranscript(filename?: string): Observable<Blob> {
-        const url = filename ? `/api/download-transcript/${encodeURIComponent(filename)}` : '/api/download-transcript';
+        const url = filename ? `${environment.apiUrl}/download-transcript/${encodeURIComponent(filename)}` : `${environment.apiUrl}/download-transcript`;
         return this.http.get(url, {
             responseType: 'blob'
         }).pipe(
@@ -51,7 +52,7 @@ export class ResumeService {
 
     downloadBatchReport(): Observable<Blob> {
         return this.http.get(
-            '/api/download-batch-report',
+            `${environment.apiUrl}/download-batch-report`,
             {
                 responseType: 'blob'
             }
@@ -61,7 +62,8 @@ export class ResumeService {
     }
 
     getUploadProgress(uploadId: string): Observable<UploadProgress> {
-        return this.http.get<UploadProgress>(`/api/upload-progress/${encodeURIComponent(uploadId)}`).pipe(
+        const url = `${environment.apiUrl}/upload-progress/${encodeURIComponent(uploadId)}`;
+        return this.http.get<UploadProgress>(url).pipe(
             catchError(this.handleError)
         );
     }
