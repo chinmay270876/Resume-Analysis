@@ -7,11 +7,14 @@ async function savePodcastScript(podcastScript, uniqueSuffix = "") {
         await fs.mkdir(outputDir, { recursive: true });
 
         const suffix = uniqueSuffix ? `_${uniqueSuffix}` : "";
-        const filePath = path.join(outputDir, `podcast-script${suffix}.txt`);
+        const outputDirName = process.env.OUTPUT_DIR || "output";
+        const scriptFilename = `podcast-script${suffix}.txt`;
+        const filePath = path.join(outputDir, scriptFilename);
+        const fileUrl = `/${outputDirName}/${scriptFilename}`;
 
         await fs.writeFile(filePath, podcastScript, "utf8");
 
-        return filePath;
+        return fileUrl;
     } catch (error) {
         console.error("Failed to save podcast script:", error);
         throw error;

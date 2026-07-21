@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Observable, throwError } from 'rxjs';
 import { catchError } from 'rxjs/operators';
-import { UploadResult } from '../models';
+import { UploadResult, UploadProgress } from '../models';
 
 @Injectable({
     providedIn: 'root'
@@ -56,6 +56,12 @@ export class ResumeService {
                 responseType: 'blob'
             }
         ).pipe(
+            catchError(this.handleError)
+        );
+    }
+
+    getUploadProgress(uploadId: string): Observable<UploadProgress> {
+        return this.http.get<UploadProgress>(`/api/upload-progress/${encodeURIComponent(uploadId)}`).pipe(
             catchError(this.handleError)
         );
     }

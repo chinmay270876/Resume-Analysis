@@ -63,27 +63,18 @@ function updateResumeStatus(uploadId, resumeId, status, extra = {}) {
     const resume = upload.resumes.get(resumeId);
     if (!resume) return;
 
-    // Once a resume reaches a terminal state (Completed/Failed) its status is
-    // final. Background tasks (podcast/report/email) emit intermediate statuses
-    // that must NOT move a finished resume backwards (e.g. back to
-    // "Generating Podcast"). Ignore any non-terminal update after completion.
-    if (resume.status === "Completed" || resume.status === "Failed") {
-        return;
+    const isTerminal = resume.status === "Completed" || resume.status === "Failed";
+
+    // Always merge extra fields (podcastPath, emailSent, etc.) even in terminal
+    // state so background task results are visible to polling clients.
+    Object.assign(resume, extra);
+
+    // Only allow status regression if the resume hasn't finished yet.
+    if (!isTerminal) {
+        resume.status = status;
+        resume.progress = STATUS_PERCENTAGE[status] || 0;
     }
-    
-    resume.status = status;
-    resume.progress = STATUS_PERCENTAGE[status] || 0;
-    
-    if (extra.endTime !== undefined) {
-        resume.endTime = extra.endTime;
-    }
-    if (extra.elapsedSeconds !== undefined) {
-        resume.elapsedSeconds = extra.elapsedSeconds;
-    }
-    if (extra.error !== undefined) {
-        resume.error = extra.error;
-    }
-    
+
     if (status === "Completed" || status === "Failed") {
         if (status === "Failed") {
             upload.failed++;
@@ -97,14 +88,7 @@ function getUploadProgress(uploadId) {
     const upload = uploads.get(uploadId);
     if (!upload) return null;
     
-    const resumes = Array.from(upload.resumes.values()).map(r => ({
-        resumeId: r.resumeId,
-        filename: r.originalFilename || r.filename,
-        status: r.status,
-        progress: r.progress,
-        elapsedSeconds: r.elapsedSeconds,
-        error: r.error
-    }));
+    const resumes = Array.from(upload.resumes.values()).map(r => ({ ...r }));
     
     const finishedResumes = upload.completed + upload.failed;
     const overallProgress = upload.totalResumes > 0 

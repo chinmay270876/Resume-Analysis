@@ -3,6 +3,7 @@
 
 # Environment variables
 .env
+debug-env.js
 
 # Uploads
 /uploads

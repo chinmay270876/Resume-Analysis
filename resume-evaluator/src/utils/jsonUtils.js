@@ -28,7 +28,7 @@ function extractJsonFromText(text) {
 
     let repaired = trimmed;
 
-    repaired = repaired.replace(/,\s*([\]}])/g, '$1');
+    repaired = repaired.replace(/([^"\\])\s*,\s*([\]}])/g, '$1$2');
 
     try {
         JSON.parse(repaired);

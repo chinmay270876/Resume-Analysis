@@ -13,9 +13,4 @@ import { ToastService } from './services/toast';
 export class App {
   private readonly platformId = inject(PLATFORM_ID);
   protected readonly toasts = inject(ToastService).toasts;
-
-  constructor() {
-    if (isPlatformBrowser(this.platformId)) {
-    }
-  }
 }

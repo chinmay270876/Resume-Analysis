@@ -2,10 +2,17 @@ require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
+const path = require("path");
 
 const app = express();
 
 const PORT = process.env.PORT || 3000;
+
+// ================================
+// Trust Proxy (for correct client IP behind reverse proxy)
+// ================================
+
+app.set("trust proxy", 1);
 
 // ================================
 // Environment Validation
@@ -37,7 +44,7 @@ const allowedOrigins = process.env.CORS_ORIGINS ?
 
 app.use(cors({
     origin: allowedOrigins,
-    methods: ["GET", "POST", "PUT", "DELETE"],
+    methods: ["GET", "POST"],
     credentials: true
 }));
 
@@ -53,21 +60,34 @@ app.use((req, res, next) => {
 });
 
 // ================================
+// Static File Serving (output, results)
+// ================================
+
+const outputDirName = process.env.OUTPUT_DIR || "output";
+const reportDirName = process.env.REPORT_DIR || "results";
+
+app.use(`/${outputDirName}`, express.static(path.join(process.cwd(), outputDirName)));
+app.use(`/${reportDirName}`, express.static(path.join(process.cwd(), reportDirName)));
+
+// ================================
 // Simple In-Memory Rate Limiter
 // ================================
 
 const rateLimitMap = new Map();
 const RATE_LIMIT_WINDOW = 60 * 1000;
 const RATE_LIMIT_MAX = 100;
+let rateLimitInterval;
 
-setInterval(() => {
+function cleanupRateLimiter() {
     const now = Date.now();
     for (const [key, record] of rateLimitMap.entries()) {
         if (now - record.windowStart > RATE_LIMIT_WINDOW) {
             rateLimitMap.delete(key);
         }
     }
-}, 5 * 60 * 1000);
+}
+
+rateLimitInterval = setInterval(cleanupRateLimiter, 5 * 60 * 1000);
 
 app.use((req, res, next) => {
     const key = req.ip || req.socket.remoteAddress;
@@ -172,6 +192,9 @@ const server = app.listen(PORT, () => {
 
 function gracefulShutdown(signal) {
     console.log(`\n${signal} received. Closing server gracefully...`);
+    if (rateLimitInterval) {
+        clearInterval(rateLimitInterval);
+    }
     server.close(() => {
         console.log("Server closed.");
         process.exit(0);

@@ -1,7 +1,7 @@
 import { Injectable, PLATFORM_ID, inject, signal } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
-import { Observable, Subscription, throwError } from 'rxjs';
-import { catchError, map } from 'rxjs/operators';
+import { Observable, Subscription, throwError, interval } from 'rxjs';
+import { catchError, map, switchMap, take, filter } from 'rxjs/operators';
 import { ResumeService } from './resume';
 import { ToastService } from './toast';
 import {
@@ -12,6 +12,8 @@ import {
   RESUME_STAGES,
   ResumeProcessedResult,
   ResumeTask,
+  UploadProgress,
+  UploadProgressResume,
   UploadResult,
 } from '../models';
 
@@ -27,11 +29,21 @@ function normalizeAnalysis(raw: Record<string, unknown> | undefined): Analysis |
     email: String(raw['email'] ?? ''),
     phone: String(raw['phone'] ?? ''),
     currentCompany: String(raw['currentCompany'] ?? raw['company'] ?? raw['current_company'] ?? raw['role'] ?? ''),
+    currentDesignation: String(raw['currentDesignation'] ?? raw['designation'] ?? raw['current_designation'] ?? raw['roleTitle'] ?? ''),
     yearsOfExperience: String(raw['yearsOfExperience'] ?? raw['yoe'] ?? raw['years_of_experience'] ?? ''),
     skills: Array.isArray(raw['skills']) ? raw['skills'].map(String) : [],
     experience: String(raw['experience'] ?? ''),
     strengths: Array.isArray(raw['strengths']) ? raw['strengths'].map(String) : [],
     weaknesses: Array.isArray(raw['weaknesses']) ? raw['weaknesses'].map(String) : [],
+    age: String(raw['age'] ?? ''),
+    highestEducation: String(raw['highestEducation'] ?? raw['education'] ?? raw['qualification'] ?? ''),
+    noticePeriod: String(raw['noticePeriod'] ?? ''),
+    location: String(raw['location'] ?? ''),
+    numberOfCompaniesWorkedWith: String(raw['numberOfCompaniesWorkedWith'] ?? ''),
+    certifications: Array.isArray(raw['certifications']) ? raw['certifications'].map(String) : [],
+    additional: String(raw['additional'] ?? ''),
+    role: String(raw['role'] ?? raw['roleTitle'] ?? ''),
+    interviewLevel: String(raw['interviewLevel'] ?? ''),
   };
 }
 
@@ -47,13 +59,29 @@ function normalizeEvaluation(raw: Record<string, unknown> | undefined): Evaluati
     score = Number.isNaN(parsed) ? null : parsed;
   }
 
+  const rawBreakdown = raw['scoreBreakdown'] as Record<string, unknown> | undefined;
+  const scoreBreakdown: Evaluation['scoreBreakdown'] = {
+    experience: typeof rawBreakdown?.['experience'] === 'number' ? rawBreakdown['experience'] : 0,
+    technicalSkills: typeof rawBreakdown?.['technicalSkills'] === 'number' ? rawBreakdown['technicalSkills'] : 0,
+    projects: typeof rawBreakdown?.['projects'] === 'number' ? rawBreakdown['projects'] : 0,
+    education: typeof rawBreakdown?.['education'] === 'number' ? rawBreakdown['education'] : 0,
+    certifications: typeof rawBreakdown?.['certifications'] === 'number' ? rawBreakdown['certifications'] : 0,
+    communication: typeof rawBreakdown?.['communication'] === 'number' ? rawBreakdown['communication'] : 0,
+    resumeQuality: typeof rawBreakdown?.['resumeQuality'] === 'number' ? rawBreakdown['resumeQuality'] : 0,
+    leadership: typeof rawBreakdown?.['leadership'] === 'number' ? rawBreakdown['leadership'] : 0,
+  };
+
   return {
     score,
+    overallScore: score,
+    scoreBreakdown,
     skills: Array.isArray(raw['skills']) ? raw['skills'].map(String) : [],
     strengths: Array.isArray(raw['strengths']) ? raw['strengths'].map(String) : [],
     weaknesses: Array.isArray(raw['weaknesses']) ? raw['weaknesses'].map(String) : [],
     result: String(raw['result'] ?? raw['recommendation'] ?? ''),
     recommendation: raw['recommendation'] ? String(raw['recommendation']) : undefined,
+    reasoning: String(raw['reasoning'] ?? ''),
+    selected: Boolean(raw['selected']),
   };
 }
 
@@ -67,7 +95,9 @@ function parseTranscript(interviewTranscript: unknown): InterviewTranscript | un
         ? JSON.parse(interviewTranscript)
         : (interviewTranscript as Record<string, unknown>);
 
-    const rawTurns = data?.['transcriptTurns'];
+    const rawTurns = Array.isArray(data)
+        ? data
+        : data?.['transcriptTurns'];
     const transcriptTurns: InterviewTurn[] = Array.isArray(rawTurns)
       ? rawTurns.map((turn: Record<string, unknown>) => ({
           speaker: String(turn['speaker'] ?? turn['role'] ?? 'Unknown'),
@@ -111,6 +141,7 @@ export class ResumeQueueService {
   private processing = false;
   private timerSubscription: Subscription | null = null;
   private currentSubscription: Subscription | null = null;
+  private pollingSubscriptions = new Map<string, Subscription>();
 
   // --- Public signals (updated immutably to drive Angular change detection) ---
 
@@ -144,8 +175,10 @@ export class ResumeQueueService {
       return `Only ${remaining} more resume${remaining === 1 ? '' : 's'} can be added.`;
     }
     for (const file of list) {
-      if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
-        return `"${file.name}" is not a PDF file.`;
+      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+      const isDocx = file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || file.name.toLowerCase().endsWith('.docx');
+      if (!isPdf && !isDocx) {
+        return `"${file.name}" is not a PDF or DOCX file.`;
       }
       if (file.size > MAX_SIZE_BYTES) {
         return `"${file.name}" exceeds the 10MB limit.`;
@@ -198,6 +231,8 @@ export class ResumeQueueService {
     this.currentSubscription?.unsubscribe();
     this.currentSubscription = null;
     this.stopTimer();
+    this.pollingSubscriptions.forEach((sub) => sub.unsubscribe());
+    this.pollingSubscriptions.clear();
     this.taskList = [];
     this.orderSeq = 0;
     this.processing = false;
@@ -357,6 +392,9 @@ export class ResumeQueueService {
           if (!response.success) {
             throw new Error(response.message ?? 'Upload failed.');
           }
+          if (response.uploadId) {
+            this.updateTask(next.id, { uploadId: response.uploadId });
+          }
           const analysis = normalizeAnalysis(response.analysis);
           const evaluation = normalizeEvaluation(response.evaluation);
           if (!analysis || !evaluation) {
@@ -377,7 +415,7 @@ export class ResumeQueueService {
             'Resume processing failed.';
           this.updateTask(next.id, {
             status: 'failed',
-            progress: 100,
+            progress: 0,
             stageIndex: -1,
             error: message,
           });
@@ -394,10 +432,80 @@ export class ResumeQueueService {
             stageIndex: lastStage,
             result,
           });
+          // Poll for background task completion (podcast, email)
+          const task = this.taskList.find((t) => t.id === next.id);
+          if (task?.uploadId) {
+            this.startStatusPolling(next.id, task.uploadId);
+          }
         },
         error: () => this.processNext(),
         complete: () => this.processNext(),
       });
+  }
+
+  private startStatusPolling(taskId: string, uploadId: string): void {
+    if (this.pollingSubscriptions.has(taskId)) {
+      return;
+    }
+
+    const subscription = interval(2000)
+        .pipe(
+        take(60),
+        switchMap(() => this.resumeService.getUploadProgress(uploadId)),
+        map((progress: UploadProgress) => {
+          const resume = progress.resumes.find((r: UploadProgressResume) => r.resumeId === taskId);
+          if (!resume) return null;
+          return resume;
+        }),
+        filter((resume): resume is UploadProgressResume => resume !== null)
+      )
+      .subscribe({
+        next: (resume) => {
+          const task = this.taskList.find((t) => t.id === taskId);
+          if (!task || !task.result) return;
+
+          const rawPatch: Record<string, unknown> = {};
+          let changed = false;
+
+          if (resume.podcastPath && task.result.raw['podcastPath'] !== resume.podcastPath) {
+            rawPatch['podcastPath'] = resume.podcastPath;
+            changed = true;
+          }
+          if (resume.podcastScriptPath && task.result.raw['podcastScriptPath'] !== resume.podcastScriptPath) {
+            rawPatch['podcastScriptPath'] = resume.podcastScriptPath;
+            changed = true;
+          }
+          if (resume.emailSent !== undefined && task.result.raw['emailSent'] !== resume.emailSent) {
+            rawPatch['emailSent'] = resume.emailSent;
+            changed = true;
+          }
+          if (resume.emailSkipped !== undefined && task.result.raw['emailSkipped'] !== resume.emailSkipped) {
+            rawPatch['emailSkipped'] = resume.emailSkipped;
+            changed = true;
+          }
+          if (resume.emailError !== undefined && task.result.raw['emailError'] !== resume.emailError) {
+            rawPatch['emailError'] = resume.emailError;
+            changed = true;
+          }
+
+          if (changed) {
+            this.updateTask(taskId, {
+              result: {
+                ...task.result,
+                raw: { ...task.result.raw, ...rawPatch },
+              },
+            });
+          }
+        },
+        complete: () => {
+          this.pollingSubscriptions.delete(taskId);
+        },
+        error: () => {
+          this.pollingSubscriptions.delete(taskId);
+        },
+      });
+
+    this.pollingSubscriptions.set(taskId, subscription);
   }
 
   /**
@@ -428,6 +536,8 @@ export class ResumeQueueService {
     this.isProcessing.set(false);
     this.currentSubscription = null;
     this.stopTimer();
+    this.pollingSubscriptions.forEach((sub) => sub.unsubscribe());
+    this.pollingSubscriptions.clear();
     this.emitOverall();
   }
 
@@ -506,8 +616,10 @@ export class ResumeQueueService {
     a.click();
     setTimeout(() => {
       URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    }, 100);
+      if (a.parentNode) {
+        a.parentNode.removeChild(a);
+      }
+    }, 500);
   }
 
   private safeName(task: ResumeTask, suffix: string): string {

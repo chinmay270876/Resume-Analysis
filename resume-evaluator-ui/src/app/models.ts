@@ -10,20 +10,43 @@ export interface Analysis {
   email: string;
   phone: string;
   currentCompany: string;
+  currentDesignation: string;
   yearsOfExperience: string;
   skills: string[];
   experience: string;
   strengths: string[];
   weaknesses: string[];
+  age: string;
+  highestEducation: string;
+  noticePeriod: string;
+  location: string;
+  numberOfCompaniesWorkedWith: string | number;
+  certifications: string[];
+  additional: string;
+  role: string;
+  interviewLevel: string;
 }
 
 export interface Evaluation {
   score: number | null;
+  overallScore: number | null;
+  scoreBreakdown: {
+    experience: number;
+    technicalSkills: number;
+    projects: number;
+    education: number;
+    certifications: number;
+    communication: number;
+    resumeQuality: number;
+    leadership: number;
+  };
   skills: string[];
   strengths: string[];
   weaknesses: string[];
   result: string;
   recommendation?: string;
+  reasoning: string;
+  selected: boolean;
 }
 
 export interface InterviewTurn {
@@ -40,21 +63,50 @@ export interface InterviewTranscript {
 export interface UploadResult {
   success: boolean;
   message?: string;
+  uploadId?: string;
   analysis?: Record<string, unknown>;
   evaluation?: Record<string, unknown>;
-  interviewTranscript?: string;
+  interviewTranscript?: InterviewTurn[] | string;
   emailSent?: boolean;
+  emailSkipped?: boolean;
+  emailError?: string | null;
   reportPath?: string;
   reportFilename?: string;
   transcriptPath?: string;
   transcriptFilename?: string;
-  podcastPath?: string;
+  podcastPath?: string | null;
+  podcastScriptPath?: string | null;
+  podcastScript?: string | null;
   fileName?: string;
 }
 
 // =============================================================================
-// Multi-Resume Analysis Queue Models
+// Upload Progress (polling)
 // =============================================================================
+
+export interface UploadProgressResume {
+  resumeId: string;
+  filename: string;
+  originalFilename: string;
+  status: ResumeStatus;
+  progress: number;
+  elapsedSeconds: number | null;
+  error: string | null;
+  podcastPath?: string;
+  podcastScriptPath?: string;
+  emailSent?: boolean;
+  emailSkipped?: boolean;
+  emailError?: string | null;
+}
+
+export interface UploadProgress {
+  uploadId: string;
+  totalResumes: number;
+  completed: number;
+  failed: number;
+  overallProgress: number;
+  resumes: UploadProgressResume[];
+}
 
 /** Lifecycle status of a single resume within the processing queue. */
 export type ResumeStatus =
@@ -107,4 +159,6 @@ export interface ResumeTask {
   elapsedSeconds: number;
   error: string | null;
   result: ResumeProcessedResult | null;
+  /** Backend upload/resume ID used for status polling. */
+  uploadId?: string;
 }

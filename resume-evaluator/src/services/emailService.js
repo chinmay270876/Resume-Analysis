@@ -74,7 +74,7 @@ async function sendInterviewInvite(candidateName, candidateEmail) {
 
         console.log(`📧 Sending interview invite to ${candidateEmail}`);
 
-        const calendlyLink = process.env.CALENDLY_LINK || "https://calendly.com/your-company/interview";
+        const calendlyLink = process.env.CALENDLY_LINK || "";
 
         const info = await transporter.sendMail({
             from: process.env.EMAIL_USER,
@@ -91,9 +91,7 @@ async function sendInterviewInvite(candidateName, candidateEmail) {
                         Our recruitment team would like to invite you
                         for the next round of interviews.
                     </p>
-                    <p>
-                        Please schedule your interview using the link below:
-                    </p>
+                    ${calendlyLink ? `<p>Please schedule your interview using the link below:</p>
                     <p>
                         <a
                             href="${calendlyLink}"
@@ -107,7 +105,7 @@ async function sendInterviewInvite(candidateName, candidateEmail) {
                         >
                             Schedule Interview
                         </a>
-                    </p>
+                    </p>` : ""}
                     <br>
                     <p>
                         Best Regards,<br>

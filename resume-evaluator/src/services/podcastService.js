@@ -50,14 +50,29 @@ async function generatePodcast(transcriptTurns, uniqueSuffix = "") {
         }
 
         console.log("🎵 Combining audio...");
-        const combinedAudio = Buffer.concat(audioBuffers);
+        const SILENCE_MS = 300;
+        const sampleRate = 24000;
+        const silenceSamples = Math.floor((SILENCE_MS / 1000) * sampleRate);
+        const silenceBuffer = Buffer.alloc(silenceSamples * 2, 0);
+
+        const combinedParts = [];
+        for (let i = 0; i < audioBuffers.length; i++) {
+            combinedParts.push(audioBuffers[i]);
+            if (i < audioBuffers.length - 1) {
+                combinedParts.push(silenceBuffer);
+            }
+        }
+        const combinedAudio = Buffer.concat(combinedParts);
 
         const suffix = uniqueSuffix ? `_${uniqueSuffix}` : "";
-        const podcastPath = path.join(outputDir, `podcast${suffix}.mp3`);
+        const outputDirName = process.env.OUTPUT_DIR || "output";
+        const podcastFilename = `podcast${suffix}.mp3`;
+        const podcastPath = path.join(outputDir, podcastFilename);
+        const podcastUrl = `/${outputDirName}/${podcastFilename}`;
         await fs.writeFile(podcastPath, combinedAudio);
 
         console.log(`✅ Podcast saved: ${podcastPath}`);
-        return podcastPath;
+        return podcastUrl;
     } catch (error) {
         console.error("Podcast Generation Error:", error);
         throw error;

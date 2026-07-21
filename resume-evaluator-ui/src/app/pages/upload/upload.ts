@@ -26,11 +26,6 @@ export class Upload {
   protected readonly error = signal<string | null>(null);
   protected readonly showQueue = signal(false);
 
-  constructor() {
-    if (isPlatformBrowser(this.platformId)) {
-    }
-  }
-
   protected onFilesSelected(event: Event): void {
     const input = event.target as HTMLInputElement;
     const files = input.files;

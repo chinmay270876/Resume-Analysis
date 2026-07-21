@@ -44,7 +44,7 @@
         <span class="upload-badge">AI Powered</span>
         <h2>Upload Resumes</h2>
         <p>
-          Drag &amp; drop or browse PDF resumes (1–{{ maxFiles }} files, max 10MB each).
+          Drag &amp; drop or browse PDF/DOCX resumes (1–{{ maxFiles }} files, max 10MB each).
           Resumes are analysed one by one in a queue.
         </p>
       </div>
@@ -65,15 +65,15 @@
       tabindex="0"
       aria-label="Upload resumes by dropping PDF files here or clicking Choose Resumes">
       <div class="glow-circle"></div>
-      <div class="upload-content">
-        <div class="upload-icon">📄</div>
-        <h3>Drag &amp; Drop Resumes</h3>
-        <p>PDF format • Maximum size 10MB • Up to {{ maxFiles }} files</p>
-        <label class="choose-file-btn">
+        <div class="upload-content">
+          <div class="upload-icon">📄</div>
+          <h3>Drag &amp; Drop Resumes</h3>
+          <p>PDF / DOCX format • Maximum size 10MB • Up to {{ maxFiles }} files</p>
+          <label class="choose-file-btn">
           Choose Resumes
           <input
             type="file"
-            accept=".pdf"
+            accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             multiple
             [disabled]="isProcessing() || tasks().length >= maxFiles"
             (change)="onFilesSelected($event)"

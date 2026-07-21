@@ -182,7 +182,21 @@ EXTRACTION RULES - follow each rule exactly:
 
 9. weaknesses: Extract weaknesses or areas for improvement from sections like "Weaknesses", "Areas for Improvement", or balanced self-assessment. Return as an array of strings. If no weaknesses section exists, return an empty array.
 
-GENERAL RULES:
+    10. age: Extract the candidate's age if explicitly mentioned in the resume. Empty string if not present. Do NOT guess or calculate from dates.
+
+    11. highestEducation: The highest qualification completed. Examples: B.Tech, MBA, M.Tech, BE, BCA, MCA, PhD, B.Sc, M.Sc, etc. Return only the highest qualification. Empty string if not present.
+
+    12. noticePeriod: Notice period if mentioned. Examples: Immediate, 15 Days, 30 Days, 60 Days, 90 Days, Serving Notice. Empty string if not present.
+
+    13. location: Current city/state location. Examples: Jaipur, Bangalore, Delhi, Noida, Hyderabad, Remote. Empty string if not present.
+
+    14. numberOfCompaniesWorkedWith: Count of distinct professional employers (full-time roles only). Ignore internships, freelancing, college projects, and training institutes. Return as a number (integer) or empty string if not determinable.
+
+    15. certifications: Array of important certifications mentioned. Examples: AWS Certified Cloud Practitioner, SAFe 6, NPTEL, Microsoft Azure, Google Cloud, PMP, HackerRank Gold Badge. Empty array if none.
+
+    16. additional: Any useful information not covered elsewhere. Examples: SAFe Certified, Agile, Leadership, Project Management, Machine Learning, Open Source Contributor, Gold Badge HackerRank. Empty string if nothing important exists.
+
+    GENERAL RULES:
 - Search the ENTIRE text (header, footer, all sections) before concluding a value is missing.
 - NEVER return the literal string "Not Provided", "N/A", "null", "none", "unknown", or similar placeholders. Only if a field is genuinely absent from the whole document, return an EMPTY STRING ("").
 - Extract values verbatim. Do not invent, guess, or normalize contact details that are not in the text.
@@ -235,6 +249,35 @@ GENERAL RULES:
                         type: "string",
                         description: "Suggested interview seniority level (e.g. Junior, Mid-level, Senior, Lead). Empty string if truly absent."
                     },
+                    age: {
+                        type: "string",
+                        description: "Candidate's age if explicitly mentioned. Empty string if not present. Do NOT guess."
+                    },
+                    highestEducation: {
+                        type: "string",
+                        description: "Highest qualification (B.Tech, MBA, M.Tech, BE, BCA, MCA, PhD, etc.). Empty string if not present."
+                    },
+                    noticePeriod: {
+                        type: "string",
+                        description: "Notice period if mentioned (Immediate, 15 Days, 30 Days, 60 Days, 90 Days, Serving Notice). Empty string if not present."
+                    },
+                    location: {
+                        type: "string",
+                        description: "Current city/state location (Jaipur, Bangalore, Delhi, Noida, Hyderabad, Remote). Empty string if not present."
+                    },
+                    numberOfCompaniesWorkedWith: {
+                        type: ["string", "number"],
+                        description: "Count of distinct professional employers (full-time roles only). Ignore internships, freelancing, college projects, training institutes. Empty string if not determinable."
+                    },
+                    certifications: {
+                        type: "array",
+                        items: { type: "string" },
+                        description: "Important certifications mentioned. Empty array if none."
+                    },
+                    additional: {
+                        type: "string",
+                        description: "Any useful information not covered elsewhere (SAFe Certified, Agile, Leadership, etc.). Empty string if nothing important."
+                    },
                     strengths: {
                         type: "array",
                         items: { type: "string" }
@@ -244,7 +287,7 @@ GENERAL RULES:
                         items: { type: "string" }
                     }
                 },
-                required: ["candidateName", "email", "phone", "skills", "experience", "currentCompany", "currentDesignation", "yearsOfExperience", "role", "interviewLevel", "strengths", "weaknesses"],
+                required: ["candidateName", "email", "phone", "skills", "experience", "currentCompany", "currentDesignation", "yearsOfExperience", "role", "interviewLevel", "strengths", "weaknesses", "age", "highestEducation", "noticePeriod", "location", "numberOfCompaniesWorkedWith", "certifications", "additional"],
                 additionalProperties: false
             }
         }

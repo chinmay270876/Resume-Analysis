@@ -16,17 +16,18 @@ async function getEvaluationPrompt() {
     return promptTemplate;
 }
 
-async function evaluateCandidate(interviewText) {
+async function evaluateCandidate(interviewText, analysis) {
     try {
         const promptTemplate = await getEvaluationPrompt();
 
-        const prompt = promptTemplate.replace("{{interviewText}}", JSON.stringify(interviewText, null, 2));
+        const resumeAnalysisJson = analysis ? JSON.stringify(analysis, null, 2) : "Not provided.";
+        const prompt = promptTemplate
+            .replace("{{interviewText}}", JSON.stringify(interviewText, null, 2))
+            .replace("{{resumeAnalysis}}", resumeAnalysisJson);
 
         const model = process.env.OPENAI_EVALUATION_MODEL || "gpt-4o";
         const temperature = 0.2;
 
-        // Match the exact naming convention your frontend uses: score, skills, strengths, weaknesses, result.
-        // Keep overallScore and recommendation for backward-compatible internal usage (Excel report + email).
         const evaluationSchema = {
             type: "json_schema",
             json_schema: {
@@ -42,6 +43,22 @@ async function evaluateCandidate(interviewText) {
                         overallScore: {
                             type: "number",
                             description: "Alias of score, kept for internal compatibility."
+                        },
+                        scoreBreakdown: {
+                            type: "object",
+                            description: "Weighted scoring breakdown out of 100 total.",
+                            additionalProperties: false,
+                            properties: {
+                                experience: { type: "number", description: "Experience score (0-25)" },
+                                technicalSkills: { type: "number", description: "Technical skills score (0-25)" },
+                                projects: { type: "number", description: "Projects score (0-10)" },
+                                education: { type: "number", description: "Education score (0-10)" },
+                                certifications: { type: "number", description: "Certifications score (0-5)" },
+                                communication: { type: "number", description: "Communication score (0-10)" },
+                                resumeQuality: { type: "number", description: "Resume quality score (0-5)" },
+                                leadership: { type: "number", description: "Leadership score (0-10)" }
+                            },
+                            required: ["experience", "technicalSkills", "projects", "education", "certifications", "communication", "resumeQuality", "leadership"]
                         },
                         skills: {
                             type: "array",
@@ -65,25 +82,35 @@ async function evaluateCandidate(interviewText) {
                         recommendation: {
                             type: "string",
                             description: "Final recommendation status, e.g., Recommended or Rejected."
+                        },
+                        reasoning: {
+                            type: "string",
+                            description: "Brief explanation of the score assignment."
+                        },
+                        selected: {
+                            type: "boolean",
+                            description: "Whether the candidate is selected for the role."
                         }
                     },
                     required: [
                         "score",
                         "overallScore",
+                        "scoreBreakdown",
                         "skills",
                         "strengths",
                         "weaknesses",
                         "result",
-                        "recommendation"
+                        "recommendation",
+                        "reasoning",
+                        "selected"
                     ],
                     additionalProperties: false
                 }
             }
         };
 
-        // Return the RAW string so the controller can log and parse it consistently with analyzeResume.
         const content = await getAiResponse(
-            "You are an AI evaluation engine. Read the interview text and evaluate the candidate.",
+            "You are an AI evaluation engine. Read the interview text and resume analysis, then evaluate the candidate holistically using the weighted scoring rubric.",
             prompt,
             model,
             temperature,

@@ -31,10 +31,6 @@ const {
 } = require("../services/evaluationService");
 
 const {
-    generateExcelReport
-} = require("../services/excelService");
-
-const {
     appendCandidate: appendBatchCandidate,
     finalizeBatch: finalizeBatchReport
 } = require("../services/batchReportService");
@@ -240,7 +236,7 @@ async function processResumeFile(file, resumeId, uploadId, onStatusUpdate, batch
         update("Evaluating Candidate");
 
         const evaluationText = await timeStage("evaluation", () =>
-            evaluateCandidate(interviewTranscript)
+            evaluateCandidate(interviewTranscript, analysis)
         );
 
         try {
@@ -295,7 +291,8 @@ async function processResumeFile(file, resumeId, uploadId, onStatusUpdate, batch
             podcastScript: null,
             podcastScriptPath: null,
             podcastPath: null,
-            reportFilename: null,
+            reportFilename: "Resume Evaluation.xlsx",
+            reportPath: "Resume Evaluation.xlsx",
             emailSent: false,
             emailSkipped: false,
             emailError: null,
@@ -317,7 +314,7 @@ async function processResumeFile(file, resumeId, uploadId, onStatusUpdate, batch
             podcastScript: null,
             podcastScriptPath: null,
             podcastPath: null,
-            reportFilename: null,
+            reportFilename: "Resume Evaluation.xlsx",
             emailSent: false,
             emailSkipped: false,
             emailError: null
@@ -354,28 +351,50 @@ async function processResumeFile(file, resumeId, uploadId, onStatusUpdate, batch
         runBackground("reports+email", resumeId, update, async () => {
             const t0 = Date.now();
 
-            const reportFilename = await generateExcelReport(analysis, evaluation, resumeId);
-            trackFile(path.join(process.cwd(), process.env.REPORT_DIR || "results", reportFilename));
-            responsePayload.reportFilename = reportFilename;
-
             // Email is non-blocking; failures are logged, never thrown.
             try {
-                const recommendation = evaluation.recommendation ? String(evaluation.recommendation).toLowerCase() : "";
+                const resultValue = (evaluation?.result || "").toLowerCase();
+                const recommendation = evaluation?.recommendation ? String(evaluation.recommendation).toLowerCase() : "";
                 const candidateEmail = analysis.email;
 
+                const positiveResult = resultValue === "pass" || resultValue === "selected" || resultValue === "hire";
                 const positiveRecommendation =
                     recommendation.includes("recommended") ||
                     recommendation.includes("selected") ||
                     recommendation.includes("pass");
 
-                if (candidateEmail && positiveRecommendation && isValidEmail(candidateEmail)) {
+                // Primary gate: result field (PASS/FAIL). Fallback: recommendation text.
+                const shouldSendEmail = positiveResult || (!resultValue && positiveRecommendation);
+
+                if (candidateEmail && shouldSendEmail && isValidEmail(candidateEmail)) {
                     await sendInterviewInvite(analysis.candidateName, candidateEmail);
                     responsePayload.emailSent = true;
+                    update("Completed", {
+                        emailSent: true,
+                        emailSkipped: false,
+                        emailError: null
+                    });
                 } else if (!isValidEmail(candidateEmail)) {
                     responsePayload.emailSkipped = true;
+                    update("Completed", {
+                        emailSent: false,
+                        emailSkipped: true,
+                        emailError: null
+                    });
+                } else {
+                    update("Completed", {
+                        emailSent: false,
+                        emailSkipped: false,
+                        emailError: null
+                    });
                 }
             } catch (err) {
                 responsePayload.emailError = err.message;
+                update("Completed", {
+                    emailSent: false,
+                    emailSkipped: false,
+                    emailError: err.message
+                });
             }
 
             const reportSeconds = Math.round((Date.now() - t0) / 100) / 100;
@@ -437,11 +456,18 @@ exports.uploadResume = async (
         console.log("Resume filename:", req.file.filename);
         console.log("Resume size:", req.file.size);
 
-        const singleResumeId = uuidv4();
-        const result = await processResumeFile(req.file, singleResumeId, null, null, singleResumeId);
+        const resumeId = uuidv4();
+        const uploadId = resumeId;
+
+        const upload = progressStore.createUpload(uploadId, 1, Date.now());
+        progressStore.addResume(uploadId, resumeId, req.file.originalname, req.file.filename);
+
+        const result = await processResumeFile(req.file, resumeId, uploadId, (rid, status, extra) => {
+            progressStore.updateResumeStatus(uploadId, rid, status, extra);
+        }, resumeId);
 
         try {
-            await finalizeBatchReport(singleResumeId);
+            await finalizeBatchReport(resumeId);
         } catch (batchErr) {
             console.error("❌ Batch report finalize failed:", batchErr.message);
         }
@@ -453,6 +479,8 @@ exports.uploadResume = async (
         return res.status(200).json({
 
             success: true,
+
+            uploadId,
 
             fileName:
                 req.file.filename,
@@ -763,40 +791,7 @@ exports.downloadTranscript = async (req, res, next) => {
 exports.downloadReport = async (req, res, next) => {
 
     try {
-        const {
-            filename
-        } = req.params;
-
-        let safeFilename = filename ?
-            path.basename(filename) :
-            lastReportStore.getLastReport();
-
-        if (!safeFilename) {
-            const reportDir = path.join(process.cwd(), process.env.REPORT_DIR || "results");
-            try {
-                const files = await fs.readdir(reportDir);
-                const xlsxFiles = files.filter((f) => f.endsWith(".xlsx"));
-                if (xlsxFiles.length > 0) {
-                    xlsxFiles.sort((a, b) => b.localeCompare(a));
-                    safeFilename = xlsxFiles[0];
-                }
-            } catch (err) {
-                // Directory read failed, fall through to 404 below
-            }
-        }
-
-        if (!safeFilename) {
-            const err = new Error("No evaluation report has been generated yet");
-            err.status = 404;
-            throw err;
-        }
-
-        if (filename && safeFilename !== filename) {
-            const err = new Error("Invalid filename");
-            err.status = 400;
-            throw err;
-        }
-
+        const safeFilename = "Resume Evaluation.xlsx";
         const reportDir = path.join(process.cwd(), process.env.REPORT_DIR || "results");
         const filePath = path.join(reportDir, safeFilename);
 
@@ -807,7 +802,7 @@ exports.downloadReport = async (req, res, next) => {
     } catch (error) {
         if (error.code === 'ENOENT') {
             error.status = 404;
-            error.message = "Evaluation report not found";
+            error.message = "Evaluation report not found. Upload a resume to generate it.";
         }
         next(error);
     }
@@ -840,7 +835,7 @@ exports.getUploadProgress = async (req, res, next) => {
 
 exports.downloadBatchReport = async (req, res, next) => {
     try {
-        const { getBatchFilePath, BATCH_FILENAME } = require("../services/batchReportService");
+        const { BATCH_FILENAME, getBatchFilePath } = require("../services/batchReportService");
         const filePath = getBatchFilePath();
 
         await fs.access(filePath);
@@ -849,7 +844,7 @@ exports.downloadBatchReport = async (req, res, next) => {
     } catch (error) {
         if (error.code === 'ENOENT') {
             error.status = 404;
-            error.message = "Batch evaluation report not found. Upload resumes to generate it.";
+            error.message = "Evaluation report not found. Upload a resume to generate it.";
         }
         next(error);
     }
