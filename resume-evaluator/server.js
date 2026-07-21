@@ -187,7 +187,13 @@ app.use((err, req, res, next) => {
 
 const server = app.listen(PORT, () => {
     console.log(`🚀 Server Running on port ${PORT}`);
-    console.log(`📌 API URL: http://localhost:${PORT}`);
+    console.log(`🚀 Server Running on port ${PORT}`);
+
+    if (process.env.RENDER_EXTERNAL_URL) {
+        console.log(`📌 API URL: ${process.env.RENDER_EXTERNAL_URL}`);
+    } else {
+        console.log(`📌 API URL: http://localhost:${PORT}`);
+    }
 });
 
 function gracefulShutdown(signal) {
