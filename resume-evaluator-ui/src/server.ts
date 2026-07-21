@@ -8,6 +8,7 @@ import express from 'express';
 import { join } from 'node:path';
 
 const browserDistFolder = join(import.meta.dirname, '../browser');
+const API_URL = process.env['API_URL'] || 'https://resume-analysis-api-so26.onrender.com';
 
 const app = express();
 const angularApp = new AngularNodeAppEngine();
@@ -34,6 +35,43 @@ app.use(
     redirect: false,
   }),
 );
+
+/**
+ * Inject runtime API_URL into HTML responses for Angular Universal SSR.
+ */
+app.use((req, res, next) => {
+  const chunks: Buffer[] = [];
+  const originalWrite = res.write;
+  const originalEnd = res.end;
+
+  res.write = function (this: express.Response, chunk: any, encoding: any, callback: any) {
+    if (chunk != null) {
+      if (Buffer.isBuffer(chunk)) {
+        chunks.push(chunk);
+      } else if (typeof chunk === 'string') {
+        chunks.push(Buffer.from(chunk, encoding));
+      }
+    }
+    return true;
+  } as any;
+
+  res.end = function (this: express.Response, chunk: any, encoding: any, callback: any) {
+    if (chunk != null) {
+      if (Buffer.isBuffer(chunk)) {
+        chunks.push(chunk);
+      } else if (typeof chunk === 'string') {
+        chunks.push(Buffer.from(chunk, encoding));
+      }
+    }
+
+    const body = Buffer.concat(chunks).toString('utf-8');
+    const replaced = body.replace(/__API_URL__/g, API_URL);
+
+    return originalEnd.call(this, replaced, encoding, callback);
+  } as any;
+
+  next();
+});
 
 /**
  * Handle all other requests by rendering the Angular application.

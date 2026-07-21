@@ -3,12 +3,15 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Observable, throwError } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { UploadResult, UploadProgress } from '../models';
-import { environment } from '../../environments/environment';
 
 @Injectable({
     providedIn: 'root'
 })
 export class ResumeService {
+
+    private apiBase =
+        typeof window !== 'undefined' ? ((window as any).__env?.API_URL || 'https://resume-analysis-api-so26.onrender.com')
+        : 'https://resume-analysis-api-so26.onrender.com';
 
     constructor(
         private http: HttpClient
@@ -22,10 +25,8 @@ export class ResumeService {
             file
         );
 
-        const url = `${environment.apiUrl}/upload-resume`;
-
         return this.http.post<UploadResult>(
-            url,
+            `${this.apiBase}/api/upload-resume`,
             formData
         ).pipe(
             catchError(this.handleError)
@@ -33,7 +34,7 @@ export class ResumeService {
     }
 
     downloadReport(filename?: string): Observable<Blob> {
-        const url = filename ? `${environment.apiUrl}/download-report/${encodeURIComponent(filename)}` : `${environment.apiUrl}/download-report`;
+        const url = filename ? `${this.apiBase}/api/download-report/${encodeURIComponent(filename)}` : `${this.apiBase}/api/download-report`;
         return this.http.get(url, {
             responseType: 'blob'
         }).pipe(
@@ -42,7 +43,7 @@ export class ResumeService {
     }
 
     downloadTranscript(filename?: string): Observable<Blob> {
-        const url = filename ? `${environment.apiUrl}/download-transcript/${encodeURIComponent(filename)}` : `${environment.apiUrl}/download-transcript`;
+        const url = filename ? `${this.apiBase}/api/download-transcript/${encodeURIComponent(filename)}` : `${this.apiBase}/api/download-transcript`;
         return this.http.get(url, {
             responseType: 'blob'
         }).pipe(
@@ -52,7 +53,7 @@ export class ResumeService {
 
     downloadBatchReport(): Observable<Blob> {
         return this.http.get(
-            `${environment.apiUrl}/download-batch-report`,
+            `${this.apiBase}/api/download-batch-report`,
             {
                 responseType: 'blob'
             }
@@ -62,7 +63,7 @@ export class ResumeService {
     }
 
     getUploadProgress(uploadId: string): Observable<UploadProgress> {
-        const url = `${environment.apiUrl}/upload-progress/${encodeURIComponent(uploadId)}`;
+        const url = `${this.apiBase}/api/upload-progress/${encodeURIComponent(uploadId)}`;
         return this.http.get<UploadProgress>(url).pipe(
             catchError(this.handleError)
         );
