@@ -49,6 +49,7 @@ const { v4: uuidv4 } = require("uuid");
 const fs = require("fs").promises;
 const path = require("path");
 const progressStore = require("../utils/progressStore");
+const { cleanupUpload } = require("../utils/progressStore");
 
 const VALID_EXTENSIONS = [".pdf", ".docx"];
 const MAX_RESUMES = 5;
@@ -158,15 +159,21 @@ async function processResumeFile(file, resumeId, uploadId, onStatusUpdate, batch
     let interviewTranscript;
     let transcriptFilename;
     let evaluation;
+    let currentStage = "Initialization";
 
     try {
         // =================================================
         // STEP 1/7: PDF Extraction
         // =================================================
 
+        currentStage = "PDF Extraction";
+        console.log("Starting PDF extraction...");
+
         const resumeTextRaw = await timeStage("pdfExtraction", () =>
             extractPdfText(file.path)
         );
+
+        console.log("PDF extraction complete.");
 
         if (!resumeTextRaw || resumeTextRaw.trim().length === 0) {
             const err = new Error("Could not extract any text from the uploaded resume. The file may be empty, scanned/image-based, or corrupted.");
@@ -182,26 +189,18 @@ async function processResumeFile(file, resumeId, uploadId, onStatusUpdate, batch
         // STEP 2/7: Resume Analysis
         // =================================================
 
+        currentStage = "Resume Analysis";
+        console.log("Starting resume analysis...");
+
         update("Analyzing Resume");
 
-        const analysisText = await timeStage("resumeAnalysis", () =>
+        const rawAnalysis = await timeStage("resumeAnalysis", () =>
             analyzeResume(resumeText)
         );
 
-        let rawAnalysis;
-        try {
-            const jsonString = extractJsonFromText(analysisText);
-            if (!jsonString) {
-                throw new Error("No valid JSON found in AI response for resume analysis.");
-            }
-            rawAnalysis = JSON.parse(jsonString);
-        } catch (parseError) {
-            console.error("========== ANALYSIS ERROR ==========");
-            console.error("Failure caused by: JSON.parse()");
-            console.error("Reason: ", parseError.message);
-            console.error(analysisText);
-            console.error("====================================");
+        console.log("Resume analysis complete.");
 
+        if (!rawAnalysis || typeof rawAnalysis !== "object") {
             const err = new Error("Invalid resume analysis response from AI.");
             err.status = 500;
             throw err;
@@ -216,36 +215,42 @@ async function processResumeFile(file, resumeId, uploadId, onStatusUpdate, batch
         // STEP 3/7: Interview Generation
         // =================================================
 
+        currentStage = "Interview Generation";
+        console.log("Starting interview generation...");
+
         update("Generating Interview");
 
         interviewTranscript = await timeStage("interviewGeneration", () =>
             generateInterview(analysis)
         );
 
+        console.log("Interview generation complete.");
+
         // =================================================
-        // STEP 4/7: Save Transcript + Candidate Evaluation
+        // STEP 4/7: Save Transcript + Candidate Evaluation (Concurrent)
         // =================================================
 
-        update("Saving Transcript");
-
-        transcriptFilename = await timeStage("saveTranscript", () =>
-            saveTranscript(interviewTranscript, candidateName, resumeId)
-        );
-        trackFile(path.join(process.cwd(), process.env.REPORT_DIR || "results", transcriptFilename));
+        currentStage = "Save Transcript & Evaluation";
+        console.log("Starting transcript save & candidate evaluation concurrently...");
 
         update("Evaluating Candidate");
 
-        const evaluationText = await timeStage("evaluation", () =>
-            evaluateCandidate(interviewTranscript, analysis)
-        );
+        const [tFilename, evalResult] = await Promise.all([
+            timeStage("saveTranscript", () =>
+                saveTranscript(interviewTranscript, candidateName, resumeId)
+            ),
+            timeStage("evaluation", () =>
+                evaluateCandidate(interviewTranscript, analysis)
+            )
+        ]);
 
-        try {
-            const jsonString = extractJsonFromText(evaluationText);
-            if (!jsonString) {
-                throw new Error("No valid JSON found in AI response for evaluation.");
-            }
-            evaluation = JSON.parse(jsonString);
-        } catch (parseError) {
+        transcriptFilename = tFilename;
+        evaluation = evalResult;
+        trackFile(path.join(process.cwd(), process.env.REPORT_DIR || "results", transcriptFilename));
+
+        console.log("Transcript save and candidate evaluation complete.");
+
+        if (!evaluation || typeof evaluation !== "object") {
             const err = new Error("Invalid evaluation response from AI.");
             err.status = 500;
             throw err;
@@ -255,7 +260,7 @@ async function processResumeFile(file, resumeId, uploadId, onStatusUpdate, batch
         // shared batch report (independent of podcast generation / email).
         if (batchToken) {
             try {
-                appendBatchCandidate(batchToken, resumeId, analysis, evaluation, false);
+                await appendBatchCandidate(batchToken, resumeId, analysis, evaluation, false);
             } catch (batchErr) {
                 console.error("❌ Batch report append failed:", batchErr.message);
             }
@@ -409,13 +414,20 @@ async function processResumeFile(file, resumeId, uploadId, onStatusUpdate, batch
         // we have) as a FAILED row so the batch report stays complete.
         if (batchToken) {
             try {
-                appendBatchCandidate(batchToken, resumeId, analysis || { candidateName: file.originalname }, null, true);
+                await appendBatchCandidate(batchToken, resumeId, analysis || { candidateName: file.originalname }, null, true);
             } catch (batchErr) {
                 console.error("❌ Batch report failed-row append failed:", batchErr.message);
             }
         }
 
-        throw error;
+        console.error(`[FATAL] ${currentStage} failed for ${file.originalname}:`, error);
+        console.error(error.stack);
+
+        const err = new Error(`${currentStage} failed: ${error.message}`);
+        err.status = error.status || 500;
+        err.stage = currentStage;
+        err.originalError = error;
+        throw err;
     }
 }
 
@@ -566,7 +578,7 @@ exports.uploadMultipleResumes = async (req, res, next) => {
         res.setHeader("Connection", "keep-alive");
         res.setHeader("X-Accel-Buffering", "no");
 
-        const upload = createUpload(uploadId, totalResumes, startTime);
+        const upload = progressStore.createUpload(uploadId, totalResumes, startTime);
 
         console.log(`\n${"=".repeat(60)}`);
         console.log(`BATCH UPLOAD STARTED: ${totalResumes} resumes`);
@@ -594,7 +606,7 @@ exports.uploadMultipleResumes = async (req, res, next) => {
 
             upload.currentResumeIndex = i + 1;
 
-            const resumeRecord = addResume(uploadId, resumeId, file.originalname, file.filename);
+            const resumeRecord = progressStore.addResume(uploadId, resumeId, file.originalname, file.filename);
 
             // Initial Queued status
             safeWrite(`data: ${JSON.stringify({
@@ -613,7 +625,7 @@ exports.uploadMultipleResumes = async (req, res, next) => {
 
             try {
                 const result = await processResumeFile(file, resumeId, uploadId, (rid, status, extra) => {
-                    updateResumeStatus(uploadId, rid, status, extra);
+                    progressStore.updateResumeStatus(uploadId, rid, status, extra);
 
                     const currentResumeProgress = progressStore.STATUS_PERCENTAGE[status] || 0;
                     const overallElapsedSeconds = Math.round((Date.now() - startTime) / 1000);
@@ -664,7 +676,7 @@ exports.uploadMultipleResumes = async (req, res, next) => {
                 failed++;
                 totalProcessingTimeForFinishedResumes += elapsedSeconds;
 
-                updateResumeStatus(uploadId, resumeId, "Failed", { endTime: Date.now(), elapsedSeconds, error: error.message });
+                progressStore.updateResumeStatus(uploadId, resumeId, "Failed", { endTime: Date.now(), elapsedSeconds, error: error.message });
 
                 const overallElapsedSeconds = Math.round((Date.now() - startTime) / 1000);
                 let estimatedRemainingTime = null;

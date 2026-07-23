@@ -1,5 +1,6 @@
 {
   "$schema": "https://app.kilo.ai/config.json",
+  "model": "anthropic/claude-3-5-sonnet",
   "compaction": {
     "auto": true,
     "prune": true

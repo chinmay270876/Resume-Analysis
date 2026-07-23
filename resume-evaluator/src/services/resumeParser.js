@@ -81,8 +81,16 @@ function itemsToText(items) {
         .join("\n");
 }
 
+let pdfjsPromise = null;
+async function getPdfJs() {
+    if (!pdfjsPromise) {
+        pdfjsPromise = import("pdfjs-dist/legacy/build/pdf.mjs");
+    }
+    return pdfjsPromise;
+}
+
 async function extractWithPdfJs(dataBuffer) {
-    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const pdfjs = await getPdfJs();
 
     const loadingTask = pdfjs.getDocument({
         data: new Uint8Array(dataBuffer),
@@ -117,15 +125,14 @@ function normalizeText(text) {
 }
 
 async function extractPdfBuffer(dataBuffer) {
-    const candidates = [];
-
     suppressPdfWarn();
 
     let pdfParseError;
     try {
         const data = await pdfParse(dataBuffer);
         if (data.text?.trim()) {
-            candidates.push(normalizeText(data.text));
+            restoreWarn();
+            return normalizeText(data.text);
         }
     } catch (error) {
         pdfParseError = error;
@@ -136,7 +143,8 @@ async function extractPdfBuffer(dataBuffer) {
     try {
         const text = await extractWithPdfJs(dataBuffer);
         if (text) {
-            candidates.push(normalizeText(text));
+            restoreWarn();
+            return normalizeText(text);
         }
     } catch (error) {
         pdfJsError = error;
@@ -145,23 +153,14 @@ async function extractPdfBuffer(dataBuffer) {
         restoreWarn();
     }
 
-    if (candidates.length === 0) {
-        let message = "Could not extract text from this PDF.";
-        if (pdfParseError) {
-            message += `\n- pdf-parse: ${pdfParseError.message}`;
-        }
-        if (pdfJsError) {
-            message += `\n- pdfjs-dist: ${pdfJsError.message}`;
-        }
-        throw new Error(message);
+    let message = "Could not extract text from this PDF.";
+    if (pdfParseError) {
+        message += `\n- pdf-parse: ${pdfParseError.message}`;
     }
-
-    // Both parsers can succeed but one may produce a cleaner, more complete
-    // layout (e.g. pdf-parse collapses tables while pdfjs keeps line breaks).
-    // Prefer the longer, most informative extraction so headers are never
-    // silently discarded.
-    candidates.sort((a, b) => b.length - a.length);
-    return candidates[0];
+    if (pdfJsError) {
+        message += `\n- pdfjs-dist: ${pdfJsError.message}`;
+    }
+    throw new Error(message);
 }
 
 async function extractPdfText(filePath) {

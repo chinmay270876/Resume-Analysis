@@ -46,7 +46,7 @@ async function generateInterview(analysis) {
             .replace(/\{\{role\}\}/gi, role)
             .replace(/\{\{interviewLevel\}\}/gi, interviewLevel);
 
-        const model = process.env.OPENAI_INTERVIEW_MODEL || "gpt-4o";
+        const model = process.env.OPENAI_INTERVIEW_MODEL || process.env.MODEL_NAME || "llama3.2";
 
         // Define a strict JSON schema that guarantees the exact response structure
         const interviewSchema = {
@@ -86,6 +86,7 @@ async function generateInterview(analysis) {
             (ctx.skills ? `Key skills: ${ctx.skills}. ` : "") +
             (ctx.strengths ? `Observed strengths: ${ctx.strengths}. ` : "") +
             `Always use the candidate's real name (${ctx.name}) in the dialogue. ` +
+            `Generate a focused, high-impact interview transcript with 6 to 8 concise dialogue turns covering key technical and behavioral questions. ` +
             `Never use placeholders like "[Candidate Name]", "Unknown Candidate", or "Not Provided".`;
 
         const content = await getAiResponse(
@@ -102,11 +103,15 @@ async function generateInterview(analysis) {
         console.log(content);
         console.log("======================================");
 
-        const jsonString = extractJsonFromText(content);
-        if (!jsonString) {
-            throw new Error("AI response did not contain valid JSON.");
+        let parsed = content;
+        if (typeof content === "string") {
+            const jsonString = extractJsonFromText(content) || content;
+            try {
+                parsed = JSON.parse(jsonString);
+            } catch (e) {
+                console.error("Failed to parse interview AI response string:", e.message);
+            }
         }
-        const parsed = JSON.parse(jsonString);
 
         // Since we are using strict schemas, we are guaranteed to have a parsed.transcript array
         if (parsed && Array.isArray(parsed.transcript)) {

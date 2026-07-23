@@ -1,5 +1,8 @@
 require("dotenv").config();
 
+const OPENAI_KEY = process.env.OPENAI_API_KEY;
+console.log("[ENV CHECK] OPENAI_API_KEY loaded?", !!OPENAI_KEY, "| Length:", OPENAI_KEY?.length, "| Starts with 'sk-':", OPENAI_KEY?.startsWith("sk-"));
+
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
@@ -36,6 +39,10 @@ if (!process.env.HF_TOKEN && !process.env.OPENAI_API_KEY) {
 const defaultOrigins = [
     "http://localhost:4200",
     "http://127.0.0.1:4200",
+    "http://localhost:4000",
+    "http://127.0.0.1:4000",
+    "https://resume-analysis-d9mf.onrender.com",
+    "https://resume-analysis-api-so26.onrender.com",
 ];
 
 const allowedOrigins = process.env.CORS_ORIGINS ?
@@ -172,12 +179,15 @@ app.use((req, res) => {
 
 app.use((err, req, res, next) => {
     console.error(err);
+    console.error(err.stack);
 
     const isProduction = process.env.NODE_ENV === "production";
 
     res.status(err.status || 500).json({
         success: false,
         error: isProduction ? "Something went wrong" : err.message,
+        stage: err.stage || "Unknown",
+        stack: isProduction ? undefined : err.stack,
     });
 });
 

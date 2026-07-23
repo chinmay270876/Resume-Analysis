@@ -27,9 +27,11 @@ const WRAP_HEADERS = new Set([
 ]);
 
 function autoSizeColumns(worksheet) {
+    const MAX_COL = 16384;
     worksheet.columns.forEach((col, index) => {
-        let maxLen = 0;
         const colIndex = index + 1;
+        if (colIndex > MAX_COL) return;
+        let maxLen = 0;
         worksheet.eachRow((row) => {
             const cell = row.getCell(colIndex);
             const val = cell.value != null ? String(cell.value) : "";
@@ -63,21 +65,20 @@ async function getMasterWorkbook() {
     console.log("Opening Resume Evaluation.xlsx...");
     console.log("Workbook exists:", exists);
 
+    let worksheet;
     if (exists) {
         await workbook.xlsx.readFile(MASTER_FILEPATH);
-        let worksheet = workbook.getWorksheet("Candidates");
+        worksheet = workbook.getWorksheet("Candidates");
         if (!worksheet) {
             worksheet = workbook.addWorksheet("Candidates");
-            worksheet.columns = HEADERS.map((header) => ({ header, key: header, width: 30 }));
-            worksheet.getRow(1).font = { bold: true };
-            worksheet.views = [{ state: "frozen", ySplit: 1 }];
         }
     } else {
-        const worksheet = workbook.addWorksheet("Candidates");
-        worksheet.columns = HEADERS.map((header) => ({ header, key: header, width: 30 }));
-        worksheet.getRow(1).font = { bold: true };
-        worksheet.views = [{ state: "frozen", ySplit: 1 }];
+        worksheet = workbook.addWorksheet("Candidates");
     }
+
+    worksheet.columns = HEADERS.map((header) => ({ header, key: header, width: 30 }));
+    worksheet.getRow(1).font = { bold: true };
+    worksheet.views = [{ state: "frozen", ySplit: 1 }];
 
     return workbook;
 }
@@ -89,10 +90,10 @@ function findDuplicateRow(worksheet, name, lastCompany) {
 
     worksheet.eachRow((row, rowNum) => {
         if (rowNum === 1) return;
-        const rowName = String(row.getCell("Name").value || "").toLowerCase().trim();
+        const rowName = String(row.getCell(1).value || "").toLowerCase().trim();
         if (rowName !== key) return;
 
-        const rowLastCompany = String(row.getCell("Last Company").value || "").toLowerCase().trim();
+        const rowLastCompany = String(row.getCell(6).value || "").toLowerCase().trim();
 
         if (lastCompany && rowLastCompany && rowLastCompany === lastCompany.toLowerCase().trim()) {
             matchRow = rowNum;
@@ -102,7 +103,15 @@ function findDuplicateRow(worksheet, name, lastCompany) {
     return matchRow;
 }
 
+let excelMutex = Promise.resolve();
+
 async function appendOrUpdateCandidate(analysis, evaluation) {
+    const nextTask = excelMutex.then(() => _appendOrUpdateCandidateImpl(analysis, evaluation));
+    excelMutex = nextTask.catch(() => {});
+    return nextTask;
+}
+
+async function _appendOrUpdateCandidateImpl(analysis, evaluation) {
     const candidateName =
         (typeof analysis.candidateName === "string" && analysis.candidateName.trim()) ||
         (typeof analysis.name === "string" && analysis.name.trim()) ||
@@ -124,8 +133,14 @@ async function appendOrUpdateCandidate(analysis, evaluation) {
         analysis.organization
     );
 
-    const existingRow = findDuplicateRow(worksheet, name, lastCompany);
+    let existingRow = findDuplicateRow(worksheet, name, lastCompany);
     console.log("Duplicate found:", existingRow !== null);
+
+    const MAX_ROW = 1048576;
+    if (existingRow && (existingRow < 1 || existingRow > MAX_ROW)) {
+        console.warn("Duplicate row index out of valid bounds, treating as new row.");
+        existingRow = null;
+    }
 
     const age = safeName(analysis.age);
     const highestEducation = safeName(
@@ -173,10 +188,12 @@ async function appendOrUpdateCandidate(analysis, evaluation) {
 
     HEADERS.forEach((header) => {
         const col = worksheet.getColumn(header);
-        if (WRAP_HEADERS.has(header)) {
-            col.alignment = { vertical: "top", wrapText: true };
-        } else {
-            col.alignment = { vertical: "middle", wrapText: true };
+        if (col) {
+            if (WRAP_HEADERS.has(header)) {
+                col.alignment = { vertical: "top", wrapText: true };
+            } else {
+                col.alignment = { vertical: "middle", wrapText: true };
+            }
         }
     });
 

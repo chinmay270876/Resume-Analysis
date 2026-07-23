@@ -25,7 +25,7 @@ async function evaluateCandidate(interviewText, analysis) {
             .replace("{{interviewText}}", JSON.stringify(interviewText, null, 2))
             .replace("{{resumeAnalysis}}", resumeAnalysisJson);
 
-        const model = process.env.OPENAI_EVALUATION_MODEL || "gpt-4o";
+        const model = process.env.OPENAI_EVALUATION_MODEL || process.env.MODEL_NAME || "llama3.2";
         const temperature = 0.2;
 
         const evaluationSchema = {

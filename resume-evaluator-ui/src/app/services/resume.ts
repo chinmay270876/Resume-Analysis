@@ -3,15 +3,14 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Observable, throwError } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { UploadResult, UploadProgress } from '../models';
+import { environment } from '../../environments/environment';
 
 @Injectable({
     providedIn: 'root'
 })
 export class ResumeService {
 
-    private apiBase =
-        typeof window !== 'undefined' ? ((window as any).__env?.API_URL || 'https://resume-analysis-api-so26.onrender.com')
-        : 'https://resume-analysis-api-so26.onrender.com';
+    private apiBase = environment.apiUrl.replace(/\/api$/, '');
 
     constructor(
         private http: HttpClient

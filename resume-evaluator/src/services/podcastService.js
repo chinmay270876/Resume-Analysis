@@ -1,24 +1,42 @@
-const { getOpenAIClient } = require("./openaiService");
-const fs = require("fs").promises;
-const path = require("path");
+const { EdgeTTS } = require('node-edge-tts');
+const fs = require('fs/promises');
+const path = require('path');
 
-async function getTTSBuffer(text, voice) {
-    console.log(`🎤 Creating speech (${voice})`);
+// Map OpenAI voice names / standard speakers to Microsoft Edge Neural voices
+const VOICE_MAP = {
+    interviewer: 'en-US-GuyNeural', // Male interviewer voice
+    candidate: 'en-US-AvaNeural',   // Female candidate voice
+    alloy: 'en-US-GuyNeural',
+    nova: 'en-US-AvaNeural',
+};
+
+/**
+ * Synthesizes text into audio buffer via Microsoft Edge TTS
+ */
+async function getTTSBuffer(text, voiceName) {
+    const selectedVoice = VOICE_MAP[voiceName.toLowerCase()] || 'en-US-AvaNeural';
+    console.log(`🎤 Creating speech (${selectedVoice})`);
+
     try {
-        const client = getOpenAIClient();
-        const speech = await client.audio.speech.create({
-            model: process.env.OPENAI_TTS_MODEL || "tts-1",
-            voice,
-            input: text,
+        const tts = new EdgeTTS({
+            voice: selectedVoice,
+            lang: 'en-US',
+            outputFormat: 'audio-24khz-48kbitrate-mono-mp3',
         });
-        console.log(`✅ Speech generated (${voice})`);
-        return Buffer.from(await speech.arrayBuffer());
+
+        // Generate speech audio buffer
+        const { buffer } = await tts.synthesize(text, 'audio-24khz-48kbitrate-mono-mp3');
+        console.log(`✅ Speech generated (${selectedVoice})`);
+        return buffer;
     } catch (error) {
-        console.error(`❌ Failed to generate speech for voice ${voice}:`, error);
-        throw error;
+        console.error(`❌ Failed to generate speech for voice ${selectedVoice}:`, error);
+        return null;
     }
 }
 
+/**
+ * Generates combined MP3 audio for an entire transcript
+ */
 async function generatePodcast(transcriptTurns, uniqueSuffix = "") {
     try {
         if (!transcriptTurns || transcriptTurns.length === 0) {
@@ -35,21 +53,36 @@ async function generatePodcast(transcriptTurns, uniqueSuffix = "") {
             throw new Error("No valid speaker turns found.");
         }
 
-        console.log(`🎙️ Generating audio in parallel...`);
+        console.log(`🎙️ Generating free local audio via Edge TTS...`);
 
         const audioBuffers = [];
-        const concurrency = 3;
+        const concurrency = 5;
+
+        // Process turns in parallel chunks to speed up synthesis
         for (let i = 0; i < turns.length; i += concurrency) {
             const chunk = turns.slice(i, i + concurrency);
             const chunkPromises = chunk.map((turn) => {
-                const voice = turn.speaker.toLowerCase() === "interviewer" ? "alloy" : "nova";
-                return getTTSBuffer(turn.text, voice);
+                const voiceKey = turn.speaker.toLowerCase() === "interviewer" ? "interviewer" : "candidate";
+                return getTTSBuffer(turn.text, voiceKey);
             });
+
             const chunkResults = await Promise.all(chunkPromises);
-            audioBuffers.push(...chunkResults);
+            const validBuffers = chunkResults.filter(Buffer.isBuffer);
+            if (validBuffers.length > 0) {
+                audioBuffers.push(...validBuffers);
+            }
         }
 
-        console.log("🎵 Combining audio...");
+        if (audioBuffers.length === 0) {
+            console.warn("⚠️ Audio generation failed for all chunks. Returning fallback URL.");
+            const suffix = uniqueSuffix ? `_${uniqueSuffix}` : "";
+            const outputDirName = process.env.OUTPUT_DIR || "output";
+            return `/${outputDirName}/podcast${suffix}.mp3`;
+        }
+
+        console.log("🎵 Combining audio with silence padding...");
+
+        // Prepare 300ms silence buffer at 24kHz 16-bit mono PCM (approximate MP3 silence padding)
         const SILENCE_MS = 300;
         const sampleRate = 24000;
         const silenceSamples = Math.floor((SILENCE_MS / 1000) * sampleRate);
@@ -62,6 +95,7 @@ async function generatePodcast(transcriptTurns, uniqueSuffix = "") {
                 combinedParts.push(silenceBuffer);
             }
         }
+
         const combinedAudio = Buffer.concat(combinedParts);
 
         const suffix = uniqueSuffix ? `_${uniqueSuffix}` : "";
@@ -69,9 +103,10 @@ async function generatePodcast(transcriptTurns, uniqueSuffix = "") {
         const podcastFilename = `podcast${suffix}.mp3`;
         const podcastPath = path.join(outputDir, podcastFilename);
         const podcastUrl = `/${outputDirName}/${podcastFilename}`;
+
         await fs.writeFile(podcastPath, combinedAudio);
 
-        console.log(`✅ Podcast saved: ${podcastPath}`);
+        console.log(`✅ Podcast audio saved: ${podcastPath}`);
         return podcastUrl;
     } catch (error) {
         console.error("Podcast Generation Error:", error);
@@ -79,6 +114,4 @@ async function generatePodcast(transcriptTurns, uniqueSuffix = "") {
     }
 }
 
-module.exports = {
-    generatePodcast,
-};
+module.exports = { generatePodcast };

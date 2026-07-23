@@ -35,11 +35,14 @@ function getTransporter() {
         }
 
         transporter = nodemailer.createTransport({
-            service: "gmail",
+            host: "smtp.gmail.com",
+            port: 587,
+            secure: false,
             auth: {
                 user: EMAIL_USER,
                 pass: EMAIL_PASS,
             },
+            family: 4,
         });
     }
     return transporter;
@@ -47,9 +50,13 @@ function getTransporter() {
 
 async function ensureTransporterVerified() {
     if (transporterVerified) return;
-    const t = getTransporter();
-    await t.verify();
-    transporterVerified = true;
+    try {
+        const t = getTransporter();
+        await t.verify();
+        transporterVerified = true;
+    } catch (err) {
+        console.warn("⚠️ SMTP Transporter verification warning:", err.message);
+    }
 }
 
 async function sendInterviewInvite(candidateName, candidateEmail) {

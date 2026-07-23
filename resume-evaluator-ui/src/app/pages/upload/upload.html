@@ -51,32 +51,22 @@
     </div>
 
     <!-- DRAG & DROP ZONE -->
-    <div
-      class="upload-zone"
-      [class.drag-over]="isDragOver()"
+    <div class="upload-zone" [class.drag-over]="isDragOver()"
       [class.disabled]="isProcessing() || tasks().length >= maxFiles"
       [attr.aria-disabled]="(isProcessing() || tasks().length >= maxFiles) ? true : null"
-      (dragover)="onDragOver($event)"
-      (dragleave)="onDragLeave($event)"
-      (drop)="onDrop($event)"
-      (keydown)="onZoneKeydown($event)"
-      (click)="onZoneClick($event)"
-      role="button"
-      tabindex="0"
+      (dragover)="onDragOver($event)" (dragleave)="onDragLeave($event)" (drop)="onDrop($event)"
+      (keydown)="onZoneKeydown($event)" (click)="onZoneClick($event)" role="button" tabindex="0"
       aria-label="Upload resumes by dropping PDF files here or clicking Choose Resumes">
       <div class="glow-circle"></div>
-        <div class="upload-content">
-          <div class="upload-icon">📄</div>
-          <h3>Drag &amp; Drop Resumes</h3>
-          <p>PDF / DOCX format • Maximum size 10MB • Up to {{ maxFiles }} files</p>
-          <label class="choose-file-btn">
+      <div class="upload-content">
+        <div class="upload-icon">📄</div>
+        <h3>Drag &amp; Drop Resumes</h3>
+        <p>PDF / DOCX format • Maximum size 10MB • Up to {{ maxFiles }} files</p>
+        <label class="choose-file-btn">
           Choose Resumes
-          <input
-            type="file"
+          <input type="file"
             accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            multiple
-            [disabled]="isProcessing() || tasks().length >= maxFiles"
-            (change)="onFilesSelected($event)"
+            multiple [disabled]="isProcessing() || tasks().length >= maxFiles" (change)="onFilesSelected($event)"
             hidden />
         </label>
       </div>
@@ -96,32 +86,20 @@
         <span class="sel-icon">📄</span>
         <span class="sel-name" [title]="task.fileName">{{ task.fileName }}</span>
         <span class="sel-size">{{ (task.fileSize / 1024 / 1024).toFixed(2) }} MB</span>
-        <button
-          class="sel-remove"
-          type="button"
-          *ngIf="!isProcessing()"
-          (click)="removeResume(task.id)"
-          title="Remove"
+        <button class="sel-remove" type="button" *ngIf="!isProcessing()" (click)="removeResume(task.id)" title="Remove"
           aria-label="Remove">✕</button>
       </div>
     </div>
 
     <!-- ACTIONS -->
     <div class="upload-actions" *ngIf="tasks().length > 0">
-      <button
-        class="upload-btn"
-        type="button"
-        [disabled]="isProcessing() || tasks().length === 0"
+      <button class="upload-btn" type="button" [disabled]="isProcessing() || tasks().length === 0"
         (click)="startProcessing()">
         <span *ngIf="!isProcessing()">🚀 Analyze {{ tasks().length }} Resume(s)</span>
         <span *ngIf="isProcessing()">🤖 Processing Resumes...</span>
       </button>
 
-      <button
-        class="reset-btn"
-        type="button"
-        *ngIf="!isProcessing()"
-        (click)="resetAll()">
+      <button class="reset-btn" type="button" *ngIf="!isProcessing()" (click)="resetAll()">
         Clear All
       </button>
     </div>
@@ -152,10 +130,7 @@
     </div>
 
     <div class="overall-actions" *ngIf="!isProcessing() && overall().completed > 0">
-      <button
-        class="batch-download-btn"
-        type="button"
-        [disabled]="downloadingBatch()"
+      <button class="batch-download-btn" type="button" [disabled]="downloadingBatch()"
         (click)="onDownloadBatchReport()">
         <span *ngIf="!downloadingBatch()" class="btn-text">⬇ Download Evaluation Report</span>
         <span *ngIf="downloadingBatch()" class="btn-content">
@@ -172,14 +147,9 @@
 
   <!-- RESUME QUEUE -->
   <div *ngIf="showQueue()" class="queue">
-    <app-resume-card
-      *ngFor="let task of tasks(); trackBy: trackByTask"
-      [task]="task"
-      [canRemove]="!isProcessing()"
-      [downloadingReportId]="downloadingReportId()"
-      (remove)="removeResume($event)"
-      (downloadTranscript)="onDownloadTranscript($event)"
-      (downloadReport)="onDownloadReport($event)"
+    <app-resume-card *ngFor="let task of tasks(); trackBy: trackByTask" [task]="task" [canRemove]="!isProcessing()"
+      [downloadingReportId]="downloadingReportId()" (remove)="removeResume($event)"
+      (downloadTranscript)="onDownloadTranscript($event)" (downloadReport)="onDownloadReport($event)"
       (downloadPodcast)="onDownloadPodcast($event)">
     </app-resume-card>
   </div>

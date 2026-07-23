@@ -6,7 +6,7 @@
  * @returns {string | null} The extracted JSON string, or null if not found.
  */
 function extractJsonFromText(text) {
-    if (!text) {
+    if (!text || typeof text !== "string") {
         return null;
     }
 
