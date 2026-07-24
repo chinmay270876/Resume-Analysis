@@ -15,12 +15,65 @@
       </div>
     </div>
 
+    <div class="ats-score-ring" *ngIf="hasAts()" [class.ats-score-high]="(ats?.atsScore ?? -1) >= 90" [class.ats-score-good]="(ats?.atsScore ?? -1) >= 70 && (ats?.atsScore ?? -1) < 90" [class.ats-score-mid]="(ats?.atsScore ?? -1) >= 50 && (ats?.atsScore ?? -1) < 70" [class.ats-score-low]="(ats?.atsScore ?? -1) >= 0 && (ats?.atsScore ?? -1) < 50" [class.ats-score-na]="ats?.atsScore === null || ats?.atsScore === undefined">
+      <svg class="ring-svg" viewBox="0 0 120 120">
+        <circle class="ring-bg" cx="60" cy="60" r="52" />
+        <circle class="ring-progress" cx="60" cy="60" r="52" [style.strokeDashoffset]="atsRingOffset()" />
+      </svg>
+      <div class="score-inner">
+        <span class="score-value">{{ ats?.atsScore ?? 'N/A' }}</span>
+        <span class="score-label">{{ ats?.atsGrade ?? '' }}</span>
+      </div>
+    </div>
+
     <div class="result-summary">
       <div class="result-badge" [class.selected]="isSelected()" [class.rejected]="isRejected()" [class.hold]="isHold()">
         {{ resultLabel() }}
       </div>
       <p class="result-text">{{ evaluation.result }}</p>
       <p *ngIf="evaluation.recommendation" class="recommendation-text">{{ evaluation.recommendation }}</p>
+    </div>
+  </div>
+
+  <div class="ats-section" *ngIf="hasAts()">
+    <div class="ats-summary" *ngIf="ats?.atsSummary">
+      <p>{{ ats.atsSummary }}</p>
+    </div>
+
+    <div class="ats-breakdown" *ngIf="atsBreakdownEntries().length">
+      <h3>ATS Breakdown</h3>
+      <div class="breakdown-grid">
+        <div class="breakdown-item" *ngFor="let entry of atsBreakdownEntries(); trackBy: trackByIndex">
+          <span class="breakdown-label">{{ entry.label }}</span>
+          <div class="breakdown-bar">
+            <div class="breakdown-fill" [style.width.%]="(entry.score / entry.max) * 100"></div>
+          </div>
+          <span class="breakdown-score">{{ entry.score }}/{{ entry.max }}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ats-details">
+      <div class="eval-section" *ngIf="ats?.missingKeywords?.length">
+        <h3>Missing Keywords</h3>
+        <div class="chips">
+          <span *ngFor="let kw of ats.missingKeywords; trackBy: trackByIndex" class="chip weakness-chip">{{ kw }}</span>
+        </div>
+      </div>
+
+      <div class="eval-section" *ngIf="ats?.formatIssues?.length">
+        <h3>Formatting Issues</h3>
+        <div class="chips">
+          <span *ngFor="let issue of ats.formatIssues; trackBy: trackByIndex" class="chip weakness-chip">{{ issue }}</span>
+        </div>
+      </div>
+
+      <div class="eval-section" *ngIf="ats?.recommendations?.length">
+        <h3>Recommendations</h3>
+        <div class="chips">
+          <span *ngFor="let rec of ats.recommendations; trackBy: trackByIndex" class="chip strength-chip">{{ rec }}</span>
+        </div>
+      </div>
     </div>
   </div>
 

@@ -59,7 +59,7 @@ async function ensureTransporterVerified() {
     }
 }
 
-async function sendInterviewInvite(candidateName, candidateEmail) {
+async function sendInterviewInvite(candidateName, candidateEmail, atsEvaluation) {
     // Phase 4: never attempt to send unless the address is real. Missing or
     // invalid emails must NOT throw - the pipeline continues normally.
     if (!isValidEmail(candidateEmail)) {
@@ -83,6 +83,9 @@ async function sendInterviewInvite(candidateName, candidateEmail) {
 
         const calendlyLink = process.env.CALENDLY_LINK || "";
 
+        const atsScore = atsEvaluation?.atsScore != null ? atsEvaluation.atsScore : null;
+        const atsRecommendations = Array.isArray(atsEvaluation?.recommendations) ? atsEvaluation.recommendations : [];
+
         const info = await transporter.sendMail({
             from: process.env.EMAIL_USER,
             to: candidateEmail,
@@ -98,6 +101,8 @@ async function sendInterviewInvite(candidateName, candidateEmail) {
                         Our recruitment team would like to invite you
                         for the next round of interviews.
                     </p>
+                    ${atsScore !== null ? `<p><strong>ATS Compatibility Score:</strong> ${atsScore}/100</p>` : ""}
+                    ${atsRecommendations.length > 0 ? `<p><strong>Key Recommendations:</strong></p><ul>${atsRecommendations.slice(0, 3).map(r => `<li>${r}</li>`).join("")}</ul>` : ""}
                     ${calendlyLink ? `<p>Please schedule your interview using the link below:</p>
                     <p>
                         <a

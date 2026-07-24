@@ -1,5 +1,6 @@
 .transcript-card {
   padding: 28px 32px;
+  animation: fadeInUp 0.5s ease 0.15s both;
 }
 
 .transcript-header {
@@ -14,14 +15,14 @@
 }
 
 .transcript-title {
-  color: #cbd5e1;
+  color: var(--color-text-secondary);
   font-size: 1rem;
   font-weight: 500;
   margin-bottom: 8px;
 }
 
 .transcript-summary {
-  color: #94a3b8;
+  color: var(--color-text-secondary);
   font-size: 0.9rem;
   line-height: 1.6;
 }
@@ -51,6 +52,7 @@
 
 .transcript-turn {
   display: flex;
+  animation: fadeInUp 0.4s ease both;
 }
 
 .transcript-turn.interviewer {
@@ -69,6 +71,11 @@
   border-radius: 18px;
   padding: 14px 18px;
   position: relative;
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.transcript-turn:hover .turn-bubble {
+  transform: translateY(-1px);
 }
 
 .interviewer .turn-bubble {
@@ -110,7 +117,7 @@
 }
 
 .turn-text {
-  color: #e2e8f0;
+  color: var(--color-text);
   font-size: 0.95rem;
   line-height: 1.65;
   white-space: pre-wrap;
@@ -118,7 +125,7 @@
 }
 
 .no-turns {
-  color: #94a3b8;
+  color: var(--color-text-secondary);
   font-style: italic;
   text-align: center;
   padding: 20px;

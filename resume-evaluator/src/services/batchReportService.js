@@ -31,7 +31,7 @@ function getBatch(token) {
     return batch;
 }
 
-async function appendCandidate(token, rowKey, analysis, evaluation, failed = false) {
+async function appendCandidate(token, rowKey, analysis, evaluation, failed = false, atsEvaluation) {
     const batch = getBatch(token);
 
     if (rowKey && batch.addedRows.has(rowKey)) {
@@ -39,7 +39,7 @@ async function appendCandidate(token, rowKey, analysis, evaluation, failed = fal
     }
 
     try {
-        await appendOrUpdateCandidate(analysis, evaluation);
+        await appendOrUpdateCandidate(analysis, evaluation, atsEvaluation);
     } catch (err) {
         console.error("❌ Master workbook append failed:", err.message);
     }

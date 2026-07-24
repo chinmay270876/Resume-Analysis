@@ -1,8 +1,33 @@
-/* =========================
-APP SHELL
-========================= */
-
 .app-shell {
   min-height: 100vh;
-  background: linear-gradient(135deg, #050a14, #0b1222, #050a14);
+  background: linear-gradient(135deg, #050a14 0%, #0b1222 50%, #07111f 100%);
+  background-size: 400% 400%;
+  animation: bgShift 12s ease infinite;
+  position: relative;
+}
+
+.app-shell::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(circle at 15% 15%, rgba(6, 182, 212, 0.08) 0%, transparent 50%),
+              radial-gradient(circle at 85% 85%, rgba(139, 92, 246, 0.08) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: 0;
+  animation: bgShift 16s ease infinite reverse;
+}
+
+@keyframes bgShift {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  25% {
+    background-position: 100% 50%;
+  }
+  50% {
+    background-position: 100% 100%;
+  }
+  75% {
+    background-position: 0% 100%;
+  }
 }

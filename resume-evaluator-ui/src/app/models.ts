@@ -49,6 +49,26 @@ export interface Evaluation {
   selected: boolean;
 }
 
+export interface AtsBreakdown {
+  contactInformation: number;
+  resumeStructure: number;
+  skills: number;
+  experience: number;
+  education: number;
+  keywordOptimization: number;
+  formatting: number;
+}
+
+export interface AtsEvaluation {
+  atsScore: number | null;
+  atsGrade: string;
+  atsSummary: string;
+  atsBreakdown: AtsBreakdown;
+  missingKeywords: string[];
+  formatIssues: string[];
+  recommendations: string[];
+}
+
 export interface InterviewTurn {
   speaker: string;
   text: string;
@@ -66,6 +86,7 @@ export interface UploadResult {
   uploadId?: string;
   analysis?: Record<string, unknown>;
   evaluation?: Record<string, unknown>;
+  atsEvaluation?: Record<string, unknown>;
   interviewTranscript?: InterviewTurn[] | string;
   emailSent?: boolean;
   emailSkipped?: boolean;
@@ -140,6 +161,7 @@ export interface ResumeProcessedResult {
   raw: UploadResult;
   analysis: Analysis;
   evaluation: Evaluation;
+  atsEvaluation: AtsEvaluation;
   parsedTranscript?: InterviewTranscript;
 }
 

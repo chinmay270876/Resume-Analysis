@@ -6,6 +6,7 @@ import { ResumeService } from './resume';
 import { ToastService } from './toast';
 import {
   Analysis,
+  AtsEvaluation,
   Evaluation,
   InterviewTranscript,
   InterviewTurn,
@@ -82,6 +83,56 @@ function normalizeEvaluation(raw: Record<string, unknown> | undefined): Evaluati
     recommendation: raw['recommendation'] ? String(raw['recommendation']) : undefined,
     reasoning: String(raw['reasoning'] ?? ''),
     selected: Boolean(raw['selected']),
+  };
+}
+
+function normalizeAts(raw: Record<string, unknown> | undefined): AtsEvaluation {
+  if (!raw) {
+    return {
+      atsScore: null,
+      atsGrade: "",
+      atsSummary: "ATS evaluation unavailable",
+      atsBreakdown: {
+        contactInformation: 0,
+        resumeStructure: 0,
+        skills: 0,
+        experience: 0,
+        education: 0,
+        keywordOptimization: 0,
+        formatting: 0,
+      },
+      missingKeywords: [],
+      formatIssues: [],
+      recommendations: [],
+    };
+  }
+
+  const rawScore = raw['atsScore'];
+  let atsScore: number | null = null;
+  if (rawScore !== undefined && rawScore !== null && String(rawScore).trim() !== '') {
+    const parsed = Number(rawScore);
+    atsScore = Number.isNaN(parsed) ? null : parsed;
+  }
+
+  const rawBreakdown = raw['atsBreakdown'] as Record<string, unknown> | undefined;
+  const atsBreakdown: AtsEvaluation['atsBreakdown'] = {
+    contactInformation: typeof rawBreakdown?.['contactInformation'] === 'number' ? rawBreakdown['contactInformation'] : 0,
+    resumeStructure: typeof rawBreakdown?.['resumeStructure'] === 'number' ? rawBreakdown['resumeStructure'] : 0,
+    skills: typeof rawBreakdown?.['skills'] === 'number' ? rawBreakdown['skills'] : 0,
+    experience: typeof rawBreakdown?.['experience'] === 'number' ? rawBreakdown['experience'] : 0,
+    education: typeof rawBreakdown?.['education'] === 'number' ? rawBreakdown['education'] : 0,
+    keywordOptimization: typeof rawBreakdown?.['keywordOptimization'] === 'number' ? rawBreakdown['keywordOptimization'] : 0,
+    formatting: typeof rawBreakdown?.['formatting'] === 'number' ? rawBreakdown['formatting'] : 0,
+  };
+
+  return {
+    atsScore,
+    atsGrade: raw['atsGrade'] ? String(raw['atsGrade']) : "",
+    atsSummary: raw['atsSummary'] ? String(raw['atsSummary']) : "ATS evaluation unavailable",
+    atsBreakdown,
+    missingKeywords: Array.isArray(raw['missingKeywords']) ? raw['missingKeywords'].map(String) : [],
+    formatIssues: Array.isArray(raw['formatIssues']) ? raw['formatIssues'].map(String) : [],
+    recommendations: Array.isArray(raw['recommendations']) ? raw['recommendations'].map(String) : [],
   };
 }
 
@@ -397,6 +448,7 @@ export class ResumeQueueService {
           }
           const analysis = normalizeAnalysis(response.analysis);
           const evaluation = normalizeEvaluation(response.evaluation);
+          const atsEvaluation = normalizeAts(response.atsEvaluation);
           if (!analysis || !evaluation) {
             throw new Error('Analysis from server was incomplete. Please try again.');
           }
@@ -404,6 +456,7 @@ export class ResumeQueueService {
             raw: response,
             analysis,
             evaluation,
+            atsEvaluation,
             parsedTranscript: parseTranscript(response.interviewTranscript),
           } as ResumeProcessedResult;
         }),

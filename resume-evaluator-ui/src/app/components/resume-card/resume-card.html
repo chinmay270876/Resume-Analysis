@@ -98,7 +98,7 @@
       </div>
 
       <app-analysis-card [analysis]="r.analysis"></app-analysis-card>
-      <app-evaluation-card [evaluation]="r.evaluation"></app-evaluation-card>
+      <app-evaluation-card [evaluation]="r.evaluation" [ats]="r.atsEvaluation"></app-evaluation-card>
       <app-interview-viewer [transcript]="r.parsedTranscript ?? null"></app-interview-viewer>
 
       <div class="podcast-block" *ngIf="r.raw.podcastPath">

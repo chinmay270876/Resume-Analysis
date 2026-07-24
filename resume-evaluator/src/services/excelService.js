@@ -18,12 +18,22 @@ const HEADERS = [
     "Additional (If Any)",
     "Number of Companies Worked With",
     "Certification",
+    "ATS Score",
+    "ATS Grade",
+    "ATS Summary",
+    "Missing Keywords",
+    "Format Issues",
+    "Recommendations",
 ];
 
 const WRAP_HEADERS = new Set([
     "Major Skills",
     "Additional (If Any)",
     "Certification",
+    "ATS Summary",
+    "Missing Keywords",
+    "Format Issues",
+    "Recommendations",
 ]);
 
 function autoSizeColumns(worksheet) {
@@ -105,13 +115,13 @@ function findDuplicateRow(worksheet, name, lastCompany) {
 
 let excelMutex = Promise.resolve();
 
-async function appendOrUpdateCandidate(analysis, evaluation) {
-    const nextTask = excelMutex.then(() => _appendOrUpdateCandidateImpl(analysis, evaluation));
+async function appendOrUpdateCandidate(analysis, evaluation, atsEvaluation) {
+    const nextTask = excelMutex.then(() => _appendOrUpdateCandidateImpl(analysis, evaluation, atsEvaluation));
     excelMutex = nextTask.catch(() => {});
     return nextTask;
 }
 
-async function _appendOrUpdateCandidateImpl(analysis, evaluation) {
+async function _appendOrUpdateCandidateImpl(analysis, evaluation, atsEvaluation) {
     const candidateName =
         (typeof analysis.candidateName === "string" && analysis.candidateName.trim()) ||
         (typeof analysis.name === "string" && analysis.name.trim()) ||
@@ -161,6 +171,13 @@ async function _appendOrUpdateCandidateImpl(analysis, evaluation) {
     const numCompanies = safeName(analysis.numberOfCompaniesWorkedWith);
     const certification = joinSafe(analysis.certifications);
 
+    const atsScore = atsEvaluation?.atsScore != null ? atsEvaluation.atsScore : "";
+    const atsGrade = safeName(atsEvaluation?.atsGrade);
+    const atsSummary = safeName(atsEvaluation?.atsSummary);
+    const missingKeywords = joinSafe(atsEvaluation?.missingKeywords);
+    const formatIssues = joinSafe(atsEvaluation?.formatIssues);
+    const recommendations = joinSafe(atsEvaluation?.recommendations);
+
     const rowData = {
         "Name": name,
         "Age": age,
@@ -173,6 +190,12 @@ async function _appendOrUpdateCandidateImpl(analysis, evaluation) {
         "Additional (If Any)": additional,
         "Number of Companies Worked With": numCompanies,
         "Certification": certification,
+        "ATS Score": atsScore,
+        "ATS Grade": atsGrade,
+        "ATS Summary": atsSummary,
+        "Missing Keywords": missingKeywords,
+        "Format Issues": formatIssues,
+        "Recommendations": recommendations,
     };
 
     if (existingRow) {
@@ -207,8 +230,8 @@ async function _appendOrUpdateCandidateImpl(analysis, evaluation) {
     return MASTER_FILENAME;
 }
 
-async function generateExcelReport(analysis, evaluation, uniqueSuffix = "") {
-    return appendOrUpdateCandidate(analysis, evaluation);
+async function generateExcelReport(analysis, evaluation, uniqueSuffix = "", atsEvaluation) {
+    return appendOrUpdateCandidate(analysis, evaluation, atsEvaluation);
 }
 
 module.exports = {

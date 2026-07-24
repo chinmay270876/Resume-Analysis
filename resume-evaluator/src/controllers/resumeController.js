@@ -31,6 +31,10 @@ const {
 } = require("../services/evaluationService");
 
 const {
+    evaluateAts
+} = require("../services/atsEvaluationService");
+
+const {
     appendCandidate: appendBatchCandidate,
     finalizeBatch: finalizeBatchReport
 } = require("../services/batchReportService");
@@ -159,6 +163,7 @@ async function processResumeFile(file, resumeId, uploadId, onStatusUpdate, batch
     let interviewTranscript;
     let transcriptFilename;
     let evaluation;
+    let atsEvaluation;
     let currentStage = "Initialization";
 
     try {
@@ -212,19 +217,32 @@ async function processResumeFile(file, resumeId, uploadId, onStatusUpdate, batch
         candidateName = analysis.candidateName || "Unknown_Candidate";
 
         // =================================================
-        // STEP 3/7: Interview Generation
+        // STEP 3/7: Interview Generation + ATS Evaluation (Concurrent)
         // =================================================
 
-        currentStage = "Interview Generation";
-        console.log("Starting interview generation...");
+        currentStage = "Interview Generation & ATS Evaluation";
+        console.log("Starting interview generation and ATS evaluation concurrently...");
 
         update("Generating Interview");
 
-        interviewTranscript = await timeStage("interviewGeneration", () =>
-            generateInterview(analysis)
-        );
+        const atsPromise = timeStage("atsEvaluation", () =>
+            evaluateAts(resumeText, analysis)
+        ).catch((err) => {
+            console.error("ATS evaluation failed (non-fatal):", err.message);
+            return null;
+        });
 
-        console.log("Interview generation complete.");
+        const [generatedTranscript, atsResult] = await Promise.all([
+            timeStage("interviewGeneration", () =>
+                generateInterview(analysis)
+            ),
+            atsPromise
+        ]);
+
+        interviewTranscript = generatedTranscript;
+        atsEvaluation = atsResult;
+
+        console.log("Interview generation and ATS evaluation complete.");
 
         // =================================================
         // STEP 4/7: Save Transcript + Candidate Evaluation (Concurrent)
@@ -260,7 +278,7 @@ async function processResumeFile(file, resumeId, uploadId, onStatusUpdate, batch
         // shared batch report (independent of podcast generation / email).
         if (batchToken) {
             try {
-                await appendBatchCandidate(batchToken, resumeId, analysis, evaluation, false);
+                await appendBatchCandidate(batchToken, resumeId, analysis, evaluation, false, atsEvaluation);
             } catch (batchErr) {
                 console.error("❌ Batch report append failed:", batchErr.message);
             }
@@ -290,6 +308,15 @@ async function processResumeFile(file, resumeId, uploadId, onStatusUpdate, batch
             candidateName: analysis.candidateName || "Unknown",
             email: analysis.email || "",
             evaluation,
+            atsEvaluation: atsEvaluation || {
+                atsScore: null,
+                atsGrade: "",
+                atsSummary: "ATS evaluation unavailable",
+                atsBreakdown: {},
+                missingKeywords: [],
+                formatIssues: [],
+                recommendations: []
+            },
             analysis,
             interviewTranscript,
             transcriptFilename,
@@ -372,7 +399,7 @@ async function processResumeFile(file, resumeId, uploadId, onStatusUpdate, batch
                 const shouldSendEmail = positiveResult || (!resultValue && positiveRecommendation);
 
                 if (candidateEmail && shouldSendEmail && isValidEmail(candidateEmail)) {
-                    await sendInterviewInvite(analysis.candidateName, candidateEmail);
+                    await sendInterviewInvite(analysis.candidateName, candidateEmail, atsEvaluation);
                     responsePayload.emailSent = true;
                     update("Completed", {
                         emailSent: true,
@@ -414,7 +441,7 @@ async function processResumeFile(file, resumeId, uploadId, onStatusUpdate, batch
         // we have) as a FAILED row so the batch report stays complete.
         if (batchToken) {
             try {
-                await appendBatchCandidate(batchToken, resumeId, analysis || { candidateName: file.originalname }, null, true);
+                await appendBatchCandidate(batchToken, resumeId, analysis || { candidateName: file.originalname }, null, true, atsEvaluation || null);
             } catch (batchErr) {
                 console.error("❌ Batch report failed-row append failed:", batchErr.message);
             }
@@ -514,6 +541,8 @@ exports.uploadResume = async (
             podcastPath: result.podcastPath,
 
             evaluation: result.evaluation,
+
+            atsEvaluation: result.atsEvaluation,
 
             reportFilename: result.reportFilename,
             reportPath: result.reportFilename,

@@ -84,6 +84,8 @@ export class ResumeCard {
 
   protected readonly result = computed(() => this.task().result);
 
+  protected readonly atsEvaluation = computed(() => this.task().result?.atsEvaluation ?? null);
+
   protected readonly isDownloadingReport = computed(() => this.downloadingReportId() === this.task().id);
 
   protected readonly reportReady = computed(() => {
