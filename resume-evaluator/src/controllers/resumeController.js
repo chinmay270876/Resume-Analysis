@@ -331,6 +331,8 @@ async function processResumeFile(file, resumeId, uploadId, onStatusUpdate, batch
             elapsedSeconds
         };
 
+        console.log("📌 [LOG] ATS data before returning API response:", JSON.stringify(responsePayload.atsEvaluation, null, 2));
+
         // =================================================
         // STEP 5.5/7: Mark resume COMPLETED (synchronous, before return)
         // =================================================
@@ -511,9 +513,7 @@ exports.uploadResume = async (
             console.error("❌ Batch report finalize failed:", batchErr.message);
         }
 
-        // ===================================
-        // FINAL RESPONSE
-        // ===================================
+        console.log("📌 [LOG] ATS data before returning API response (http):", JSON.stringify(result.atsEvaluation, null, 2));
 
         return res.status(200).json({
 

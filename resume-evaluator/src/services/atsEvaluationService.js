@@ -110,7 +110,7 @@ RULES:
         };
 
         const content = await getAiResponse(
-            "You are an ATS compatibility expert. Analyze the resume text and return a structured JSON evaluation.",
+            prompt,
             resumeText,
             model,
             0.2,
@@ -121,13 +121,23 @@ RULES:
             throw new Error("Invalid ATS evaluation response from AI.");
         }
 
-        const score = typeof content.atsScore === "number" ? content.atsScore : null;
+        const score = typeof content.atsScore === "number" ? content.atsScore : (Number(content.atsScore) || null);
+        const rawBreakdown = content.atsBreakdown || {};
+        const parseScore = (val) => (typeof val === "number" && !isNaN(val) ? val : (parseFloat(val) || 0));
 
         const result = {
             atsScore: score,
             atsGrade: getGrade(score),
             atsSummary: typeof content.atsSummary === "string" ? content.atsSummary : "",
-            atsBreakdown: content.atsBreakdown || {},
+            atsBreakdown: {
+                contactInformation: parseScore(rawBreakdown.contactInformation),
+                resumeStructure: parseScore(rawBreakdown.resumeStructure),
+                skills: parseScore(rawBreakdown.skills),
+                experience: parseScore(rawBreakdown.experience),
+                education: parseScore(rawBreakdown.education),
+                keywordOptimization: parseScore(rawBreakdown.keywordOptimization),
+                formatting: parseScore(rawBreakdown.formatting),
+            },
             missingKeywords: Array.isArray(content.missingKeywords) ? content.missingKeywords : [],
             formatIssues: Array.isArray(content.formatIssues) ? content.formatIssues : [],
             recommendations: Array.isArray(content.recommendations) ? content.recommendations : []
@@ -138,6 +148,7 @@ RULES:
         console.log(`ATS Score: ${result.atsScore}`);
         console.log(`ATS Grade: ${result.atsGrade}`);
         console.log(`Time Taken: ${timeTaken}s`);
+        console.log("📌 [LOG] ATS data immediately after AI generation:", JSON.stringify(result, null, 2));
         console.log("=================================================");
 
         return result;

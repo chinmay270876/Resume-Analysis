@@ -1,4 +1,5 @@
 const { OpenAI } = require("openai");
+const { extractJsonFromText } = require("../utils/jsonUtils");
 
 const DEFAULT_TIMEOUT = 60 * 1000;
 
@@ -145,6 +146,14 @@ async function getAiResponse(prompt, userContent, model, temperature, responseFo
                 .trim();
             return JSON.parse(cleanJson);
         } catch (parseErr) {
+            const extracted = extractJsonFromText(rawContent);
+            if (extracted) {
+                try {
+                    return JSON.parse(extracted);
+                } catch (e) {
+                    // Fallthrough
+                }
+            }
             console.warn("⚠️ Failed to parse JSON from AI response, returning raw string.");
             return rawContent;
         }
