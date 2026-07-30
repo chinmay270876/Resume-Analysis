@@ -41,7 +41,10 @@ const defaultOrigins = [
     "http://127.0.0.1:4200",
     "http://localhost:4000",
     "http://127.0.0.1:4000",
+
     "https://resume-analysis-d9mf.onrender.com",
+    "https://resume-analysis-b7p7.onrender.com",
+
     "https://resume-analysis-api-so26.onrender.com",
 ];
 
@@ -50,10 +53,20 @@ const allowedOrigins = process.env.CORS_ORIGINS ?
     defaultOrigins;
 
 app.use(cors({
-    origin: allowedOrigins,
-    methods: ["GET", "POST"],
-    credentials: true
+    origin(origin, callback) {
+        if (!origin) return callback(null, true);
+
+        if (allowedOrigins.includes(origin)) {
+            return callback(null, true);
+        }
+
+        return callback(new Error("Not allowed by CORS"));
+    },
+    methods: ["GET", "POST", "OPTIONS"],
+    credentials: true,
 }));
+
+app.options("*", cors());
 
 // ================================
 // Security Headers
