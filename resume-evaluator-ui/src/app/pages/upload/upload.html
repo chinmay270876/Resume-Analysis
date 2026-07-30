@@ -1,14 +1,21 @@
 <div class="hero-container">
 
+  <!-- THEME TOGGLE BUTTON -->
+  <button class="theme-toggle-btn" type="button" (click)="toggleTheme()"
+    [attr.aria-label]="isDarkMode() ? 'Switch to Light Mode' : 'Switch to Dark Mode'"
+    [title]="isDarkMode() ? 'Switch to Light Mode' : 'Switch to Dark Mode'">
+    <span class="theme-icon">{{ isDarkMode() ? '☀️' : '🌙' }}</span>
+    <span class="theme-label">{{ isDarkMode() ? 'Light Mode' : 'Dark Mode' }}</span>
+  </button>
+
   <div class="background-blur blur1"></div>
   <div class="background-blur blur2"></div>
 
   <!-- HERO -->
   <div class="hero-section">
-    <div class="hero-icon">🚀</div>
-    <h1>AI Resume Intelligence Platform</h1>
+    <h1>Resume Analysis</h1>
     <p>
-      Upload up to 5 resumes and let AI perform complete candidate analysis,
+      Upload up to {{ maxFiles }} resumes and let AI perform complete candidate analysis,
       interview generation, evaluation and podcast creation.
     </p>
   </div>
@@ -39,7 +46,7 @@
 
   <!-- UPLOAD CARD -->
   <div class="upload-card">
-    <div class="upload-header">
+    <div class="upload-card-content">
       <div class="upload-title">
         <span class="upload-badge">AI Powered</span>
         <h2>Upload Resumes</h2>
@@ -48,27 +55,36 @@
           Resumes are analysed one by one in a queue.
         </p>
       </div>
-    </div>
 
-    <!-- DRAG & DROP ZONE -->
-    <div class="upload-zone" [class.drag-over]="isDragOver()"
-      [class.disabled]="isProcessing() || tasks().length >= maxFiles"
-      [attr.aria-disabled]="(isProcessing() || tasks().length >= maxFiles) ? true : null"
-      (dragover)="onDragOver($event)" (dragleave)="onDragLeave($event)" (drop)="onDrop($event)"
-      (keydown)="onZoneKeydown($event)" (click)="onZoneClick($event)" role="button" tabindex="0"
-      aria-label="Upload resumes by dropping PDF files here or clicking Choose Resumes">
-      <div class="glow-circle"></div>
-      <div class="upload-content">
-        <div class="upload-icon">📄</div>
-        <h3>Drag &amp; Drop Resumes</h3>
-        <p>PDF / DOCX format • Maximum size 10MB • Up to {{ maxFiles }} files</p>
-        <label class="choose-file-btn">
-          Choose Resumes
-          <input type="file"
-            accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            multiple [disabled]="isProcessing() || tasks().length >= maxFiles" (change)="onFilesSelected($event)"
-            hidden />
-        </label>
+      <!-- RIGHT SIDE INTEGRATED UPLOAD ACTION AREA -->
+      <div class="upload-zone" [class.drag-over]="isDragOver()"
+        [class.disabled]="isProcessing() || tasks().length >= maxFiles"
+        [attr.aria-disabled]="(isProcessing() || tasks().length >= maxFiles) ? true : null"
+        (dragover)="onDragOver($event)" (dragleave)="onDragLeave($event)" (drop)="onDrop($event)"
+        (keydown)="onZoneKeydown($event)" (click)="onZoneClick($event)" role="button" tabindex="0"
+        aria-label="Upload resumes by dropping PDF files here or clicking Drag & Drop or Choose Resumes">
+        <div class="glow-circle"></div>
+        <div class="upload-content">
+          <div class="upload-icon-small">
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 16V4M12 4L7 9M12 4L17 9" stroke="url(#cyan-purple-grad)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M3 15V18C3 19.6569 4.34315 21 6 21H18C19.6569 21 21 19.6569 21 18V15" stroke="url(#cyan-purple-grad)" stroke-width="2.2" stroke-linecap="round"/>
+              <defs>
+                <linearGradient id="cyan-purple-grad" x1="3" y1="4" x2="21" y2="21" gradientUnits="userSpaceOnUse">
+                  <stop stop-color="#06b6d4"/>
+                  <stop offset="1" stop-color="#a855f7"/>
+                </linearGradient>
+              </defs>
+            </svg>
+          </div>
+          <label class="choose-file-btn">
+            Drag &amp; Drop or Choose Resumes
+            <input type="file"
+              accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              multiple [disabled]="isProcessing() || tasks().length >= maxFiles" (change)="onFilesSelected($event)"
+              hidden />
+          </label>
+        </div>
       </div>
     </div>
 
@@ -95,7 +111,7 @@
     <div class="upload-actions" *ngIf="tasks().length > 0">
       <button class="upload-btn" type="button" [disabled]="isProcessing() || tasks().length === 0"
         (click)="startProcessing()">
-        <span *ngIf="!isProcessing()">🚀 Analyze {{ tasks().length }} Resume(s)</span>
+        <span *ngIf="!isProcessing()">⚡ Analyze {{ tasks().length }} Resume(s)</span>
         <span *ngIf="isProcessing()">🤖 Processing Resumes...</span>
       </button>
 

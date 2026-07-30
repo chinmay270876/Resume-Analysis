@@ -1,4 +1,4 @@
-import { Component, inject, PLATFORM_ID, signal } from '@angular/core';
+import { Component, inject, OnInit, PLATFORM_ID, signal } from '@angular/core';
 import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { ResumeQueueService } from '../../services/resume-queue';
 import { ResumeTask } from '../../models';
@@ -11,7 +11,7 @@ import { ResumeCard } from '../../components/resume-card/resume-card';
   templateUrl: './upload.html',
   styleUrl: './upload.css',
 })
-export class Upload {
+export class Upload implements OnInit {
   private readonly queue = inject(ResumeQueueService);
   private readonly platformId = inject(PLATFORM_ID);
 
@@ -25,6 +25,33 @@ export class Upload {
   protected readonly isDragOver = signal(false);
   protected readonly error = signal<string | null>(null);
   protected readonly showQueue = signal(false);
+  protected readonly isDarkMode = signal(true);
+
+  ngOnInit(): void {
+    if (isPlatformBrowser(this.platformId)) {
+      const savedTheme = localStorage.getItem('theme');
+      const isDark = savedTheme !== 'light';
+      this.isDarkMode.set(isDark);
+      this.applyTheme(isDark);
+    }
+  }
+
+  protected toggleTheme(): void {
+    const newIsDark = !this.isDarkMode();
+    this.isDarkMode.set(newIsDark);
+    if (isPlatformBrowser(this.platformId)) {
+      localStorage.setItem('theme', newIsDark ? 'dark' : 'light');
+      this.applyTheme(newIsDark);
+    }
+  }
+
+  private applyTheme(isDark: boolean): void {
+    if (isDark) {
+      document.body.classList.remove('light-mode');
+    } else {
+      document.body.classList.add('light-mode');
+    }
+  }
 
   protected onFilesSelected(event: Event): void {
     const input = event.target as HTMLInputElement;
