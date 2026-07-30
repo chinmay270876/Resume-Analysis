@@ -66,6 +66,9 @@ export class EvaluationCard {
   }
 
   protected hasAts(): boolean {
+    if (this.ats) {
+      console.log("📌 [LOG] ATS data just before rendering:", this.ats);
+    }
     return this.ats !== null && this.ats !== undefined;
   }
 

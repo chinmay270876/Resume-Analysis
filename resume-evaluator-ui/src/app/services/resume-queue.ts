@@ -114,21 +114,32 @@ function normalizeAts(raw: Record<string, unknown> | undefined): AtsEvaluation {
     atsScore = Number.isNaN(parsed) ? null : parsed;
   }
 
+  const parseNum = (val: unknown): number => {
+    if (typeof val === 'number') return Number.isNaN(val) ? 0 : val;
+    if (typeof val === 'string') {
+      const parsed = parseFloat(val);
+      return Number.isNaN(parsed) ? 0 : parsed;
+    }
+    return 0;
+  };
+
   const rawBreakdown = raw['atsBreakdown'] as Record<string, unknown> | undefined;
   const atsBreakdown: AtsEvaluation['atsBreakdown'] = {
-    contactInformation: typeof rawBreakdown?.['contactInformation'] === 'number' ? rawBreakdown['contactInformation'] : 0,
-    resumeStructure: typeof rawBreakdown?.['resumeStructure'] === 'number' ? rawBreakdown['resumeStructure'] : 0,
-    skills: typeof rawBreakdown?.['skills'] === 'number' ? rawBreakdown['skills'] : 0,
-    experience: typeof rawBreakdown?.['experience'] === 'number' ? rawBreakdown['experience'] : 0,
-    education: typeof rawBreakdown?.['education'] === 'number' ? rawBreakdown['education'] : 0,
-    keywordOptimization: typeof rawBreakdown?.['keywordOptimization'] === 'number' ? rawBreakdown['keywordOptimization'] : 0,
-    formatting: typeof rawBreakdown?.['formatting'] === 'number' ? rawBreakdown['formatting'] : 0,
+    contactInformation: parseNum(rawBreakdown?.['contactInformation']),
+    resumeStructure: parseNum(rawBreakdown?.['resumeStructure']),
+    skills: parseNum(rawBreakdown?.['skills']),
+    experience: parseNum(rawBreakdown?.['experience']),
+    education: parseNum(rawBreakdown?.['education']),
+    keywordOptimization: parseNum(rawBreakdown?.['keywordOptimization']),
+    formatting: parseNum(rawBreakdown?.['formatting']),
   };
+
+  const summary = raw['atsSummary'] ? String(raw['atsSummary']) : (atsScore !== null ? "" : "ATS evaluation unavailable");
 
   return {
     atsScore,
     atsGrade: raw['atsGrade'] ? String(raw['atsGrade']) : "",
-    atsSummary: raw['atsSummary'] ? String(raw['atsSummary']) : "ATS evaluation unavailable",
+    atsSummary: summary,
     atsBreakdown,
     missingKeywords: Array.isArray(raw['missingKeywords']) ? raw['missingKeywords'].map(String) : [],
     formatIssues: Array.isArray(raw['formatIssues']) ? raw['formatIssues'].map(String) : [],
@@ -449,6 +460,7 @@ export class ResumeQueueService {
           const analysis = normalizeAnalysis(response.analysis);
           const evaluation = normalizeEvaluation(response.evaluation);
           const atsEvaluation = normalizeAts(response.atsEvaluation);
+          console.log("📌 [LOG] ATS data received in Angular:", atsEvaluation);
           if (!analysis || !evaluation) {
             throw new Error('Analysis from server was incomplete. Please try again.');
           }
