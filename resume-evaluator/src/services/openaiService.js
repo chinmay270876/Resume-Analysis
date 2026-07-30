@@ -83,7 +83,12 @@ async function getAiResponse(prompt, userContent, model, temperature, responseFo
 
     try {
         const client = getOpenAIClient();
-
+        console.log("==================================");
+        console.log("OpenAI model:", targetModel);
+        console.log("HF model:", process.env.HF_MODEL);
+        console.log("HF Base URL:", process.env.HF_BASE_URL);
+        console.log("==================================");
+        console.log("HF MODEL USED:", process.env.HF_MODEL);
         const response = await client.chat.completions.create({
             model: targetModel,
             temperature: temperature,
