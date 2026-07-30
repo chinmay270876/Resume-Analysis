@@ -21,11 +21,11 @@ app.set("trust proxy", 1);
 // Environment Validation
 // ================================
 
-if (!process.env.HF_TOKEN && !process.env.OPENAI_API_KEY) {
+if (!process.env.OPENAI_API_KEY) {
 
     console.error(
         "\x1b[31m%s\x1b[0m",
-        "CRITICAL ERROR: HF_TOKEN or OPENAI_API_KEY missing"
+        "CRITICAL ERROR: OPENAI_API_KEY missing"
     );
 
     process.exit(1);

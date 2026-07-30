@@ -16,59 +16,8 @@ function getOpenAIClient() {
     return openai;
 }
 
-let hfClient;
-
-function getHfClient() {
-    if (!hfClient) {
-        const apiKey = process.env.HF_TOKEN;
-        if (!apiKey) {
-            throw new Error("HF_TOKEN is missing from environment variables");
-        }
-        hfClient = new OpenAI({
-            apiKey,
-            baseURL: process.env.HF_BASE_URL || "https://router.huggingface.co/v1",
-            timeout: DEFAULT_TIMEOUT,
-        });
-    }
-    return hfClient;
-}
-
-function shouldFallbackToHf(error) {
-    if (!error) return false;
-    const status = error.status;
-    const code = error.code || error.error?.code;
-    const type = error.type;
-    const name = error.name || error.constructor?.name || "";
-    const msg = error.message || "";
-
-    if (
-        name.includes("Timeout") ||
-        name.includes("Connection") ||
-        msg.includes("timed out") ||
-        msg.includes("Timeout") ||
-        type === "connection_error" ||
-        code === "ENOTFOUND" ||
-        code === "ECONNREFUSED" ||
-        code === "ECONNRESET" ||
-        code === "ETIMEDOUT"
-    ) {
-        return true;
-    }
-
-    return (
-        status === 401 ||
-        status === 402 ||
-        status === 429 ||
-        status >= 500 ||
-        code === "insufficient_quota" ||
-        code === "invalid_api_key" ||
-        code === "rate_limit_exceeded" ||
-        !status
-    );
-}
-
 /**
- * Shared helper to interact with LLMs (OpenAI / HF)
+ * Shared helper to interact with LLMs (OpenAI)
  * Automatically strips markdown fences and parses JSON responses.
  */
 async function getAiResponse(prompt, userContent, model, temperature, responseFormat = { type: "json_object" }) {
@@ -85,10 +34,8 @@ async function getAiResponse(prompt, userContent, model, temperature, responseFo
         const client = getOpenAIClient();
         console.log("==================================");
         console.log("OpenAI model:", targetModel);
-        console.log("HF model:", process.env.HF_MODEL);
-        console.log("HF Base URL:", process.env.HF_BASE_URL);
         console.log("==================================");
-        console.log("HF MODEL USED:", process.env.HF_MODEL);
+
         const response = await client.chat.completions.create({
             model: targetModel,
             temperature: temperature,
@@ -105,40 +52,8 @@ async function getAiResponse(prompt, userContent, model, temperature, responseFo
             throw new Error("AI returned an empty response.");
         }
     } catch (error) {
-        if (process.env.HF_TOKEN && shouldFallbackToHf(error)) {
-            console.warn(`⚠️ Primary API failed (${error.message}). Falling back to Hugging Face.`);
-            try {
-                const hf = getHfClient();
-
-                let hfResponseFormat = responseFormat;
-                if (hfResponseFormat?.type === "json_schema") {
-                    hfResponseFormat = { type: "text" };
-                }
-
-                const hfResponse = await hf.chat.completions.create({
-                    model: process.env.HF_MODEL || "meta-llama/Llama-3.1-8B-Instruct:novita",
-                    temperature: temperature,
-                    response_format: hfResponseFormat,
-                    messages: [
-                        { role: "system", content: finalPrompt },
-                        { role: "user", content: typeof userContent === "string" ? userContent : JSON.stringify(userContent) },
-                    ],
-                });
-
-                rawContent = hfResponse.choices?.[0]?.message?.content;
-                if (!rawContent) {
-                    throw new Error("AI returned empty response from Hugging Face.");
-                }
-
-                console.log("✅ Hugging Face response received");
-            } catch (hfError) {
-                console.error("❌ Hugging Face fallback also failed:", hfError.message);
-                throw new Error(`Primary API failed: ${error.message}. Hugging Face fallback failed: ${hfError.message}`);
-            }
-        } else {
-            console.error("❌ AI Error:", error);
-            throw error;
-        }
+        console.error("❌ AI Error:", error);
+        throw error;
     }
 
     // Safely strip markdown code blocks and parse JSON if expected
@@ -253,7 +168,6 @@ Return a JSON object with the following structure:
 
 module.exports = {
     getOpenAIClient,
-    getHfClient,
     getAiResponse,
     analyzeResume,
     generateInterview,
