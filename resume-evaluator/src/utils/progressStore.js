@@ -73,13 +73,13 @@ function updateResumeStatus(uploadId, resumeId, status, extra = {}) {
     if (!isTerminal) {
         resume.status = status;
         resume.progress = STATUS_PERCENTAGE[status] || 0;
-    }
 
-    if (status === "Completed" || status === "Failed") {
-        if (status === "Failed") {
-            upload.failed++;
-        } else {
-            upload.completed++;
+        if (status === "Completed" || status === "Failed") {
+            if (status === "Failed") {
+                upload.failed++;
+            } else {
+                upload.completed++;
+            }
         }
     }
 }

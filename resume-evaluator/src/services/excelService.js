@@ -239,4 +239,5 @@ module.exports = {
     appendOrUpdateCandidate,
     MASTER_FILENAME,
     MASTER_FILEPATH,
+    HEADERS,
 };

@@ -2,23 +2,10 @@ const {
     appendOrUpdateCandidate,
     MASTER_FILENAME,
     MASTER_FILEPATH,
-    HEADERS,
 } = require("./excelService");
 
 const REPORT_DIR = process.env.REPORT_DIR || "results";
 const BATCH_FILENAME = MASTER_FILENAME;
-
-const CENTER_HEADERS = new Set([
-    "Name",
-    "Age",
-    "Highest Education",
-    "Years Of Experience",
-    "Notice Period",
-    "Last Company",
-    "Location",
-    "Number of Companies Worked With",
-    "Certification",
-]);
 
 const activeBatches = new Map();
 
@@ -66,5 +53,4 @@ module.exports = {
     appendCandidate,
     finalizeBatch,
     getBatchFilePath,
-    HEADERS,
 };

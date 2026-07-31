@@ -1,7 +1,9 @@
 require("dotenv").config();
 
 const OPENAI_KEY = process.env.OPENAI_API_KEY;
-console.log("[ENV CHECK] OPENAI_API_KEY loaded?", !!OPENAI_KEY, "| Length:", OPENAI_KEY?.length, "| Starts with 'sk-':", OPENAI_KEY?.startsWith("sk-"));
+if (process.env.NODE_ENV !== "production") {
+    console.log("[ENV CHECK] OPENAI_API_KEY loaded?", !!OPENAI_KEY, "| Length:", OPENAI_KEY?.length, "| Starts with 'sk-':", OPENAI_KEY?.startsWith("sk-"));
+}
 
 const express = require("express");
 const cors = require("cors");
@@ -55,27 +57,31 @@ const allowedOrigins = process.env.CORS_ORIGINS ?
 app.use(cors({
     origin(origin, callback) {
 
-        console.log("====================================");
-        console.log("Incoming Origin:", origin);
-        console.log("Allowed Origins:", allowedOrigins);
-        console.log("====================================");
+        if (process.env.NODE_ENV !== "production") {
+            console.log("====================================");
+            console.log("Incoming Origin:", origin);
+            console.log("Allowed Origins:", allowedOrigins);
+            console.log("====================================");
+        }
 
         if (!origin) return callback(null, true);
 
         if (allowedOrigins.includes(origin)) {
-            console.log("✅ Origin Allowed");
+            if (process.env.NODE_ENV !== "production") {
+                console.log("✅ Origin Allowed");
+            }
             return callback(null, true);
         }
 
-        console.log("❌ Origin Blocked");
+        if (process.env.NODE_ENV !== "production") {
+            console.log("❌ Origin Blocked");
+        }
 
         return callback(new Error("Not allowed by CORS"));
     },
     methods: ["GET", "POST", "OPTIONS"],
     credentials: true,
 }));
-
-app.options(/.*/, cors());
 
 // ================================
 // Security Headers
@@ -85,6 +91,12 @@ app.use((req, res, next) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("X-Frame-Options", "DENY");
     res.setHeader("X-XSS-Protection", "1; mode=block");
+    res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    res.setHeader("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
+    if (process.env.NODE_ENV === "production") {
+        res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+        res.setHeader("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://api.openai.com https://api.openai.com/v1; font-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'");
+    }
     next();
 });
 

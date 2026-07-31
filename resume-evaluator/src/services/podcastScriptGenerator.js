@@ -23,7 +23,7 @@ async function generatePodcastScript(interviewTranscript) {
             JSON.stringify(interviewTranscript)
         );
 
-        const model = process.env.OPENAI_PODCAST_SCRIPT_MODEL || process.env.MODEL_NAME || "llama3.2";
+        const model = process.env.OPENAI_PODCAST_SCRIPT_MODEL || process.env.MODEL_NAME || "gpt-4o-mini";
 
         const content = await getAiResponse(
             "You are a podcast script writer.",

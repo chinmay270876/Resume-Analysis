@@ -80,23 +80,9 @@ async function generatePodcast(transcriptTurns, uniqueSuffix = "") {
             return `/${outputDirName}/podcast${suffix}.mp3`;
         }
 
-        console.log("🎵 Combining audio with silence padding...");
+        console.log("🎵 Combining audio segments...");
 
-        // Prepare 300ms silence buffer at 24kHz 16-bit mono PCM (approximate MP3 silence padding)
-        const SILENCE_MS = 300;
-        const sampleRate = 24000;
-        const silenceSamples = Math.floor((SILENCE_MS / 1000) * sampleRate);
-        const silenceBuffer = Buffer.alloc(silenceSamples * 2, 0);
-
-        const combinedParts = [];
-        for (let i = 0; i < audioBuffers.length; i++) {
-            combinedParts.push(audioBuffers[i]);
-            if (i < audioBuffers.length - 1) {
-                combinedParts.push(silenceBuffer);
-            }
-        }
-
-        const combinedAudio = Buffer.concat(combinedParts);
+        const combinedAudio = Buffer.concat(audioBuffers);
 
         const suffix = uniqueSuffix ? `_${uniqueSuffix}` : "";
         const outputDirName = process.env.OUTPUT_DIR || "output";

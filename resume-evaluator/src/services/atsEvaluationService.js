@@ -148,7 +148,9 @@ RULES:
         console.log(`ATS Score: ${result.atsScore}`);
         console.log(`ATS Grade: ${result.atsGrade}`);
         console.log(`Time Taken: ${timeTaken}s`);
-        console.log("📌 [LOG] ATS data immediately after AI generation:", JSON.stringify(result, null, 2));
+        if (process.env.NODE_ENV !== "production") {
+            console.log("📌 [LOG] ATS data immediately after AI generation:", JSON.stringify(result, null, 2));
+        }
         console.log("=================================================");
 
         return result;
