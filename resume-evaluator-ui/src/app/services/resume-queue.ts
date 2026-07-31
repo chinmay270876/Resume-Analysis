@@ -19,7 +19,7 @@ import {
 } from '../models';
 
 const MAX_FILES = 5;
-const MAX_SIZE_BYTES = 10 * 1024 * 1024;
+const MAX_SIZE_BYTES = 5 * 1024 * 1024;
 
 function normalizeAnalysis(raw: Record<string, unknown> | undefined): Analysis | null {
   if (!raw) {
@@ -243,7 +243,7 @@ export class ResumeQueueService {
         return `"${file.name}" is not a PDF or DOCX file.`;
       }
       if (file.size > MAX_SIZE_BYTES) {
-        return `"${file.name}" exceeds the 10MB limit.`;
+        return `"${file.name}" exceeds the 5MB limit.`;
       }
     }
     return null;
