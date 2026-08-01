@@ -11,9 +11,11 @@ const HEADERS = [
     "Age",
     "Highest Education",
     "Years Of Experience",
+    "Email Id",
+    "Contact Number",
+    "Current Location",
     "Notice Period",
     "Last Company",
-    "Location",
     "Major Skills",
     "Additional (If Any)",
     "Number of Companies Worked With",
@@ -103,7 +105,7 @@ function findDuplicateRow(worksheet, name, lastCompany) {
         const rowName = String(row.getCell(1).value || "").toLowerCase().trim();
         if (rowName !== key) return;
 
-        const rowLastCompany = String(row.getCell(6).value || "").toLowerCase().trim();
+        const rowLastCompany = String(row.getCell(9).value || "").toLowerCase().trim();
 
         if (lastCompany && rowLastCompany && rowLastCompany === lastCompany.toLowerCase().trim()) {
             matchRow = rowNum;
@@ -135,6 +137,7 @@ async function _appendOrUpdateCandidateImpl(analysis, evaluation, atsEvaluation)
 
     const name = candidateName;
     const email = safeName(analysis.email);
+    const phone = safeName(analysis.phone);
     const lastCompany = safeName(
         analysis.currentCompany ||
         analysis.company ||
@@ -183,9 +186,11 @@ async function _appendOrUpdateCandidateImpl(analysis, evaluation, atsEvaluation)
         "Age": age,
         "Highest Education": highestEducation,
         "Years Of Experience": yearsOfExperience,
+        "Email Id": email,
+        "Contact Number": phone,
+        "Current Location": location,
         "Notice Period": noticePeriod,
         "Last Company": lastCompany,
-        "Location": location,
         "Major Skills": majorSkills,
         "Additional (If Any)": additional,
         "Number of Companies Worked With": numCompanies,
@@ -234,9 +239,36 @@ async function generateExcelReport(analysis, evaluation, uniqueSuffix = "", atsE
     return appendOrUpdateCandidate(analysis, evaluation, atsEvaluation);
 }
 
+// Recreates the master workbook from its template so that it contains only
+// the header row. This is invoked on a fresh frontend session (page refresh)
+// to guarantee the next upload starts with a clean report while preserving the
+// workbook template: headers, column widths, styles and the frozen header view.
+// The report folder itself is intentionally left intact.
+async function resetWorkbook() {
+    const nextTask = excelMutex.then(() => _resetWorkbookImpl());
+    excelMutex = nextTask.catch(() => {});
+    return nextTask;
+}
+
+async function _resetWorkbookImpl() {
+    const reportDir = path.join(process.cwd(), REPORT_DIR);
+    await fsp.mkdir(reportDir, { recursive: true });
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Candidates");
+    worksheet.columns = HEADERS.map((header) => ({ header, key: header, width: 30 }));
+    worksheet.getRow(1).font = { bold: true };
+    worksheet.views = [{ state: "frozen", ySplit: 1 }];
+
+    await workbook.xlsx.writeFile(MASTER_FILEPATH);
+    console.log("Workbook reset to header-only state:", MASTER_FILENAME);
+    return MASTER_FILENAME;
+}
+
 module.exports = {
     generateExcelReport,
     appendOrUpdateCandidate,
+    resetWorkbook,
     MASTER_FILENAME,
     MASTER_FILEPATH,
     HEADERS,

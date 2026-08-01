@@ -1,6 +1,7 @@
 import { Component, inject, OnInit, PLATFORM_ID, signal } from '@angular/core';
 import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { ResumeQueueService } from '../../services/resume-queue';
+import { ResumeService } from '../../services/resume';
 import { ResumeTask } from '../../models';
 import { ResumeCard } from '../../components/resume-card/resume-card';
 
@@ -13,6 +14,7 @@ import { ResumeCard } from '../../components/resume-card/resume-card';
 })
 export class Upload implements OnInit {
   private readonly queue = inject(ResumeQueueService);
+  private readonly resumeService = inject(ResumeService);
   private readonly platformId = inject(PLATFORM_ID);
 
   protected readonly tasks = this.queue.tasks;
@@ -29,11 +31,27 @@ export class Upload implements OnInit {
 
   ngOnInit(): void {
     if (isPlatformBrowser(this.platformId)) {
+      this.resetSession();
       const savedTheme = localStorage.getItem('theme');
       const isDark = savedTheme !== 'light';
       this.isDarkMode.set(isDark);
       this.applyTheme(isDark);
     }
+  }
+
+  /**
+   * Clears the in-memory upload queue and resets the shared Excel report so
+   * that every page refresh (F5 / Ctrl+R / browser refresh / reopen) starts
+   * from a clean session. Reuses the existing queue.reset() for in-memory
+   * state; the backend workbook is recreated header-only via the API.
+   */
+  private resetSession(): void {
+    this.queue.reset();
+    this.resumeService.resetReport().subscribe({
+      error: () => {
+        // Best-effort: a failed workbook reset must never block the UI.
+      },
+    });
   }
 
   protected toggleTheme(): void {

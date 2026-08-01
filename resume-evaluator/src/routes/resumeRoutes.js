@@ -9,7 +9,8 @@ const {
     downloadTranscript,
     downloadReport,
     downloadBatchReport,
-    getUploadProgress
+    getUploadProgress,
+    resetReport
 } = require("../controllers/resumeController");
 
 // =====================================
@@ -76,6 +77,15 @@ router.get(
 router.get(
     "/download-batch-report",
     downloadBatchReport
+);
+
+// =====================================
+// Reset Excel Report (start a fresh session)
+// =====================================
+
+router.post(
+    "/reset-report",
+    resetReport
 );
 
 module.exports = router;

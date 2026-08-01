@@ -46,6 +46,11 @@ const {
 const lastReportStore = require("../utils/lastReportStore");
 
 const {
+    resetWorkbook,
+    MASTER_FILENAME,
+} = require("../services/excelService");
+
+const {
     sendInterviewInvite,
     isValidEmail
 } = require("../services/emailService");
@@ -99,6 +104,7 @@ function validateAnalysis(analysis) {
     analysis.yearsOfExperience = (cleanString(analysis.yearsOfExperience) || "").trim();
     analysis.role = (cleanString(analysis.role) || cleanString(analysis.roleTitle) || "").trim();
     analysis.interviewLevel = (cleanString(analysis.interviewLevel) || "").trim();
+    analysis.location = (cleanString(analysis.location) || "").trim();
 
     if (Array.isArray(analysis.skills)) {
         analysis.skills = analysis.skills.map((s) => cleanString(s)).filter(Boolean);
@@ -885,5 +891,23 @@ exports.downloadBatchReport = async (req, res, next) => {
             error.message = "Evaluation report not found. Upload a resume to generate it.";
         }
         next(error);
+    }
+};
+
+// =================================================
+// RESET REPORT (clears the shared workbook to its
+// header-only template at the start of a new session)
+// =================================================
+
+exports.resetReport = async (req, res, next) => {
+    try {
+        await resetWorkbook();
+        return res.status(200).json({
+            success: true,
+            message: "Report workbook reset to a clean header-only state.",
+            reportFilename: MASTER_FILENAME,
+        });
+    } catch (err) {
+        next(err);
     }
 };

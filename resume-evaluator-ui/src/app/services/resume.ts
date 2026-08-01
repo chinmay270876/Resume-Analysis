@@ -61,6 +61,15 @@ export class ResumeService {
         );
     }
 
+    resetReport(): Observable<{ success: boolean; message?: string; reportFilename?: string }> {
+        return this.http.post<{ success: boolean; message?: string; reportFilename?: string }>(
+            `${this.apiBase}/api/reset-report`,
+            {}
+        ).pipe(
+            catchError(this.handleError)
+        );
+    }
+
     getUploadProgress(uploadId: string): Observable<UploadProgress> {
         const url = `${this.apiBase}/api/upload-progress/${encodeURIComponent(uploadId)}`;
         return this.http.get<UploadProgress>(url).pipe(
