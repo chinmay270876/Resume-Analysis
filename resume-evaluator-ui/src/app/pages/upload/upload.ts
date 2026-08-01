@@ -2,7 +2,7 @@ import { Component, inject, OnInit, PLATFORM_ID, signal } from '@angular/core';
 import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { ResumeQueueService } from '../../services/resume-queue';
 import { ResumeService } from '../../services/resume';
-import { ResumeTask } from '../../models';
+import { ResumeTask, RankedCandidate } from '../../models';
 import { ResumeCard } from '../../components/resume-card/resume-card';
 
 @Component({
@@ -23,6 +23,11 @@ export class Upload implements OnInit {
   protected readonly maxFiles = this.queue.maxFiles;
   protected readonly downloadingBatch = this.queue.batchDownloading;
   protected readonly downloadingReportId = this.queue.downloadingReportId;
+  protected readonly jdFile = this.queue.jdFile;
+  protected readonly jdAnalysis = this.queue.jdAnalysis;
+  protected readonly candidateRanking = this.queue.candidateRanking;
+  protected readonly rankingInProgress = this.queue.rankingInProgress;
+  protected readonly rankingError = this.queue.rankingError;
 
   protected readonly isDragOver = signal(false);
   protected readonly error = signal<string | null>(null);
@@ -161,6 +166,37 @@ export class Upload implements OnInit {
 
   protected onDownloadPodcast(task: ResumeTask): void {
     this.queue.downloadPodcast(task);
+  }
+
+  protected onJdSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (file) {
+      const error = this.queue.setJobDescription(file);
+      if (error) {
+        this.error.set(error);
+      } else {
+        this.error.set(null);
+      }
+    }
+    input.value = '';
+  }
+
+  protected removeJobDescription(): void {
+    if (!this.isProcessing()) {
+      this.queue.removeJobDescription();
+    }
+  }
+
+  protected recommendationClass(recommendation: string): string {
+    const value = recommendation.toLowerCase();
+    if (value.includes('shortlist')) return 'rec-shortlist';
+    if (value.includes('hold')) return 'rec-hold';
+    return 'rec-reject';
+  }
+
+  protected trackByRank(index: number, entry: RankedCandidate): number {
+    return entry.rank;
   }
 
   protected onDownloadBatchReport(): void {

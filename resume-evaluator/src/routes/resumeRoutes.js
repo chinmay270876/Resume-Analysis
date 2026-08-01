@@ -10,6 +10,8 @@ const {
     downloadReport,
     downloadBatchReport,
     getUploadProgress,
+    parseJobDescription,
+    rankCandidates,
     resetReport
 } = require("../controllers/resumeController");
 
@@ -31,6 +33,25 @@ router.post(
     "/upload-resumes",
     upload.array("resumes", 5),
     uploadMultipleResumes
+);
+
+// =====================================
+// Parse Job Description
+// =====================================
+
+router.post(
+    "/parse-jd",
+    upload.single("jobDescription"),
+    parseJobDescription
+);
+
+// =====================================
+// Rank Candidates Against JD
+// =====================================
+
+router.post(
+    "/rank-candidates",
+    rankCandidates
 );
 
 // =====================================

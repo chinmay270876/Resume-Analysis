@@ -173,30 +173,33 @@ async function getAiResponse(prompt, userContent, model, temperature, responseFo
 async function analyzeResume(resumeText) {
     const prompt = `You are a professional HR recruiter and resume analyst. Extract structured data from the provided resume text with high accuracy.
 
-Return a JSON object with the following keys:
-- candidateName (string)
-- email (string)
-- phone (string)
-- skills (array of strings)
+Explicitly extract these candidate fields:
+- Candidate Name → candidateName (string)
+- Age → age (string)
+- Contact Number → phone (string)
+- Email Id → email (string)
+- Highest Education → highestEducation (string)
+- Years of Experience → yearsOfExperience (string)
+- Notice Period → noticePeriod (string)
+- Last Company → currentCompany (string; most recent employer)
+- Current Location → location (string)
+- Major Skills → skills (array of strings; primary/technical skills only)
+- Number of Companies Worked With → numberOfCompaniesWorkedWith (number or string)
+- Certifications → certifications (array of strings)
+
+Also return these additional keys used by downstream interview/evaluation steps:
 - experience (string)
-- currentCompany (string)
 - currentDesignation (string)
-- yearsOfExperience (string)
 - role (string)
 - interviewLevel (string)
-- age (string)
-- highestEducation (string)
-- noticePeriod (string)
-- location (string)
-- numberOfCompaniesWorkedWith (number or string)
-- certifications (array of strings)
 - additional (string)
 - strengths (array of strings)
 - weaknesses (array of strings)
 
 RULES:
 - Search the ENTIRE text before concluding a value is missing.
-- NEVER return placeholders like "Not Provided", "N/A", or "unknown". Return an EMPTY STRING ("") if genuinely absent.
+- If any field above cannot be found, return an EMPTY STRING ("") for strings or an EMPTY ARRAY ([]) for arrays.
+- NEVER return placeholders like "Not Provided", "N/A", "Not Available", "Not Found", "Unknown", or "Missing".
 - Extract values verbatim. Do not guess.`;
 
     const model = process.env.MODEL_NAME || "gpt-4o-mini";

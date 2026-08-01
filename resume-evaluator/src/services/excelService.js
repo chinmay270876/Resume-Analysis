@@ -9,34 +9,36 @@ const MASTER_FILEPATH = path.join(process.cwd(), REPORT_DIR, MASTER_FILENAME);
 const HEADERS = [
     "Name",
     "Age",
-    "Highest Education",
-    "Years Of Experience",
-    "Email Id",
     "Contact Number",
-    "Current Location",
+    "Email Id",
+    "Highest Education",
+    "Years of Experience",
     "Notice Period",
     "Last Company",
+    "Location",
     "Major Skills",
-    "Additional (If Any)",
-    "Number of Companies Worked With",
+    "Skills missed from JD",
+    "Number of companies worked with",
     "Certification",
-    "ATS Score",
-    "ATS Grade",
-    "ATS Summary",
-    "Missing Keywords",
-    "Format Issues",
-    "Recommendations",
+];
+
+const RANKING_HEADERS = [
+    "Rank",
+    "Candidate Name",
+    "Match Score",
+    "Strengths / Weaknesses Summary",
+    "Recommendation",
 ];
 
 const WRAP_HEADERS = new Set([
     "Major Skills",
-    "Additional (If Any)",
+    "Skills missed from JD",
     "Certification",
-    "ATS Summary",
-    "Missing Keywords",
-    "Format Issues",
-    "Recommendations",
+    "Strengths / Weaknesses Summary",
 ]);
+
+const MISSING_VALUE = "-";
+const PLACEHOLDER_RE = /^(not\s*available|not\s*found|not\s*provided|n\/?a|na|null|none|unknown|undefined|missing|-+)$/i;
 
 function autoSizeColumns(worksheet) {
     const MAX_COL = 16384;
@@ -67,6 +69,33 @@ function joinSafe(value) {
     return String(value);
 }
 
+function isPlaceholder(value) {
+    if (typeof value !== "string") {
+        return false;
+    }
+    const trimmed = value.trim();
+    return !trimmed || PLACEHOLDER_RE.test(trimmed);
+}
+
+function toExcelValue(value) {
+    if (Array.isArray(value)) {
+        const joined = joinSafe(value).trim();
+        return joined && !isPlaceholder(joined) ? joined : MISSING_VALUE;
+    }
+    if (value === null || value === undefined) {
+        return MISSING_VALUE;
+    }
+    if (typeof value === "number" && !Number.isNaN(value)) {
+        return String(value);
+    }
+    if (typeof value === "string") {
+        const trimmed = value.trim();
+        return trimmed && !isPlaceholder(trimmed) ? trimmed : MISSING_VALUE;
+    }
+    const asString = String(value).trim();
+    return asString && !isPlaceholder(asString) ? asString : MISSING_VALUE;
+}
+
 async function getMasterWorkbook() {
     const reportDir = path.join(process.cwd(), REPORT_DIR);
     await fsp.mkdir(reportDir, { recursive: true });
@@ -92,22 +121,48 @@ async function getMasterWorkbook() {
     worksheet.getRow(1).font = { bold: true };
     worksheet.views = [{ state: "frozen", ySplit: 1 }];
 
+    ensureRankingWorksheet(workbook);
+
     return workbook;
 }
 
+function ensureRankingWorksheet(workbook) {
+    let rankingSheet = workbook.getWorksheet("Ranking");
+    if (!rankingSheet) {
+        rankingSheet = workbook.addWorksheet("Ranking");
+    }
+    rankingSheet.columns = RANKING_HEADERS.map((header) => ({ header, key: header, width: 30 }));
+    rankingSheet.getRow(1).font = { bold: true };
+    rankingSheet.views = [{ state: "frozen", ySplit: 1 }];
+    return rankingSheet;
+}
+
+function formatStrengthsWeaknessesSummary(entry) {
+    const bullets = entry.rank <= 2
+        ? (Array.isArray(entry.strengths) ? entry.strengths : [])
+        : (Array.isArray(entry.weaknesses) ? entry.weaknesses : []);
+    if (!bullets.length) {
+        return MISSING_VALUE;
+    }
+    return bullets.map((item) => `• ${item}`).join("\n");
+}
+
 function findDuplicateRow(worksheet, name, lastCompany) {
-    if (!name) return null;
+    if (!name || name === MISSING_VALUE) return null;
+    const nameCol = HEADERS.indexOf("Name") + 1;
+    const lastCompanyCol = HEADERS.indexOf("Last Company") + 1;
     const key = name.toLowerCase().trim();
     let matchRow = null;
 
     worksheet.eachRow((row, rowNum) => {
         if (rowNum === 1) return;
-        const rowName = String(row.getCell(1).value || "").toLowerCase().trim();
-        if (rowName !== key) return;
+        const rowName = String(row.getCell(nameCol).value || "").toLowerCase().trim();
+        if (rowName !== key || rowName === MISSING_VALUE) return;
 
-        const rowLastCompany = String(row.getCell(9).value || "").toLowerCase().trim();
+        const rowLastCompany = String(row.getCell(lastCompanyCol).value || "").toLowerCase().trim();
 
-        if (lastCompany && rowLastCompany && rowLastCompany === lastCompany.toLowerCase().trim()) {
+        if (lastCompany && rowLastCompany && rowLastCompany !== MISSING_VALUE &&
+            rowLastCompany === lastCompany.toLowerCase().trim()) {
             matchRow = rowNum;
         }
     });
@@ -125,20 +180,16 @@ async function appendOrUpdateCandidate(analysis, evaluation, atsEvaluation) {
 
 async function _appendOrUpdateCandidateImpl(analysis, evaluation, atsEvaluation) {
     const candidateName =
-        (typeof analysis.candidateName === "string" && analysis.candidateName.trim()) ||
-        (typeof analysis.name === "string" && analysis.name.trim()) ||
-        "Unknown Candidate";
+        safeName(analysis.candidateName) ||
+        safeName(analysis.name);
 
     console.log("Appending candidate:");
-    console.log(candidateName);
+    console.log(candidateName || MISSING_VALUE);
 
     const workbook = await getMasterWorkbook();
     const worksheet = workbook.getWorksheet("Candidates");
 
-    const name = candidateName;
-    const email = safeName(analysis.email);
-    const phone = safeName(analysis.phone);
-    const lastCompany = safeName(
+    const lastCompanyRaw = safeName(
         analysis.currentCompany ||
         analysis.company ||
         analysis.currentEmployer ||
@@ -146,7 +197,7 @@ async function _appendOrUpdateCandidateImpl(analysis, evaluation, atsEvaluation)
         analysis.organization
     );
 
-    let existingRow = findDuplicateRow(worksheet, name, lastCompany);
+    let existingRow = findDuplicateRow(worksheet, candidateName, lastCompanyRaw);
     console.log("Duplicate found:", existingRow !== null);
 
     const MAX_ROW = 1048576;
@@ -155,52 +206,29 @@ async function _appendOrUpdateCandidateImpl(analysis, evaluation, atsEvaluation)
         existingRow = null;
     }
 
-    const age = safeName(analysis.age);
-    const highestEducation = safeName(
-        analysis.highestEducation ||
-        analysis.education ||
-        analysis.qualification
-    );
-    const yearsOfExperience = safeName(
-        analysis.yearsOfExperience ||
-        analysis.yoe ||
-        analysis.totalExperience ||
-        analysis.experienceYears
-    );
-    const noticePeriod = safeName(analysis.noticePeriod);
-    const location = safeName(analysis.location);
-    const majorSkills = joinSafe(analysis.skills);
-    const additional = safeName(analysis.additional);
-    const numCompanies = safeName(analysis.numberOfCompaniesWorkedWith);
-    const certification = joinSafe(analysis.certifications);
-
-    const atsScore = atsEvaluation?.atsScore != null ? atsEvaluation.atsScore : "";
-    const atsGrade = safeName(atsEvaluation?.atsGrade);
-    const atsSummary = safeName(atsEvaluation?.atsSummary);
-    const missingKeywords = joinSafe(atsEvaluation?.missingKeywords);
-    const formatIssues = joinSafe(atsEvaluation?.formatIssues);
-    const recommendations = joinSafe(atsEvaluation?.recommendations);
-
     const rowData = {
-        "Name": name,
-        "Age": age,
-        "Highest Education": highestEducation,
-        "Years Of Experience": yearsOfExperience,
-        "Email Id": email,
-        "Contact Number": phone,
-        "Current Location": location,
-        "Notice Period": noticePeriod,
-        "Last Company": lastCompany,
-        "Major Skills": majorSkills,
-        "Additional (If Any)": additional,
-        "Number of Companies Worked With": numCompanies,
-        "Certification": certification,
-        "ATS Score": atsScore,
-        "ATS Grade": atsGrade,
-        "ATS Summary": atsSummary,
-        "Missing Keywords": missingKeywords,
-        "Format Issues": formatIssues,
-        "Recommendations": recommendations,
+        "Name": toExcelValue(candidateName),
+        "Age": toExcelValue(analysis.age),
+        "Contact Number": toExcelValue(analysis.phone),
+        "Email Id": toExcelValue(analysis.email),
+        "Highest Education": toExcelValue(
+            analysis.highestEducation ||
+            analysis.education ||
+            analysis.qualification
+        ),
+        "Years of Experience": toExcelValue(
+            analysis.yearsOfExperience ||
+            analysis.yoe ||
+            analysis.totalExperience ||
+            analysis.experienceYears
+        ),
+        "Notice Period": toExcelValue(analysis.noticePeriod),
+        "Last Company": toExcelValue(lastCompanyRaw),
+        "Location": toExcelValue(analysis.location),
+        "Major Skills": toExcelValue(analysis.skills),
+        "Skills missed from JD": toExcelValue(atsEvaluation?.missingKeywords),
+        "Number of companies worked with": toExcelValue(analysis.numberOfCompaniesWorkedWith),
+        "Certification": toExcelValue(analysis.certifications),
     };
 
     if (existingRow) {
@@ -260,8 +288,55 @@ async function _resetWorkbookImpl() {
     worksheet.getRow(1).font = { bold: true };
     worksheet.views = [{ state: "frozen", ySplit: 1 }];
 
+    ensureRankingWorksheet(workbook);
+
     await workbook.xlsx.writeFile(MASTER_FILEPATH);
     console.log("Workbook reset to header-only state:", MASTER_FILENAME);
+    return MASTER_FILENAME;
+}
+
+async function writeCandidateRanking(rankings) {
+    const nextTask = excelMutex.then(() => _writeCandidateRankingImpl(rankings));
+    excelMutex = nextTask.catch(() => {});
+    return nextTask;
+}
+
+async function _writeCandidateRankingImpl(rankings) {
+    if (!Array.isArray(rankings) || rankings.length === 0) {
+        return MASTER_FILENAME;
+    }
+
+    const workbook = await getMasterWorkbook();
+    const rankingSheet = ensureRankingWorksheet(workbook);
+
+    while (rankingSheet.rowCount > 1) {
+        rankingSheet.spliceRows(2, 1);
+    }
+
+    for (const entry of rankings) {
+        rankingSheet.addRow({
+            "Rank": toExcelValue(entry.rank),
+            "Candidate Name": toExcelValue(entry.candidateName),
+            "Match Score": entry.matchScore != null ? `${entry.matchScore}%` : MISSING_VALUE,
+            "Strengths / Weaknesses Summary": formatStrengthsWeaknessesSummary(entry),
+            "Recommendation": toExcelValue(entry.recommendation),
+        });
+    }
+
+    RANKING_HEADERS.forEach((header) => {
+        const col = rankingSheet.getColumn(header);
+        if (col) {
+            col.alignment = {
+                vertical: "top",
+                wrapText: WRAP_HEADERS.has(header),
+            };
+        }
+    });
+
+    autoSizeColumns(rankingSheet);
+
+    await workbook.xlsx.writeFile(MASTER_FILEPATH);
+    console.log("Ranking worksheet updated:", rankings.length, "candidates");
     return MASTER_FILENAME;
 }
 
@@ -269,7 +344,9 @@ module.exports = {
     generateExcelReport,
     appendOrUpdateCandidate,
     resetWorkbook,
+    writeCandidateRanking,
     MASTER_FILENAME,
     MASTER_FILEPATH,
     HEADERS,
+    RANKING_HEADERS,
 };

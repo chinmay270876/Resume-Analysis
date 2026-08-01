@@ -40,6 +40,19 @@ const {
 } = require("../services/batchReportService");
 
 const {
+    parseJobDescription
+} = require("../services/jdParserService");
+
+const {
+    rankCandidatesAgainstJd
+} = require("../services/candidateRankingService");
+
+const {
+    resetWorkbook,
+    writeCandidateRanking
+} = require("../services/excelService");
+
+const {
     saveTranscript
 } = require("../services/transcriptService");
 
@@ -887,6 +900,100 @@ exports.downloadBatchReport = async (req, res, next) => {
             error.status = 404;
             error.message = "Evaluation report not found. Upload a resume to generate it.";
         }
+        next(error);
+    }
+};
+
+// =================================================
+// PARSE JOB DESCRIPTION
+// =================================================
+
+exports.parseJobDescription = async (req, res, next) => {
+    try {
+        if (!req.file) {
+            const err = new Error("No job description file uploaded");
+            err.status = 400;
+            throw err;
+        }
+
+        console.log("-------------------------------------------------");
+        console.log("Job Description uploaded:", req.file.originalname);
+        console.log("-------------------------------------------------");
+
+        const jdAnalysis = await parseJobDescription(req.file.path);
+
+        return res.status(200).json({
+            success: true,
+            filename: req.file.originalname,
+            jdAnalysis,
+        });
+    } catch (error) {
+        next(error);
+    } finally {
+        if (req.file && req.file.path) {
+            await safeUnlink(req.file.path);
+        }
+    }
+};
+
+// =================================================
+// RANK CANDIDATES AGAINST JOB DESCRIPTION
+// =================================================
+
+exports.rankCandidates = async (req, res, next) => {
+    try {
+        const { jdAnalysis, candidates } = req.body || {};
+
+        if (!jdAnalysis || typeof jdAnalysis !== "object") {
+            const err = new Error("Job description analysis is required.");
+            err.status = 400;
+            throw err;
+        }
+
+        if (!Array.isArray(candidates) || candidates.length < 2) {
+            const err = new Error("At least 2 successfully processed candidates are required for ranking.");
+            err.status = 400;
+            throw err;
+        }
+
+        for (const candidate of candidates) {
+            if (!candidate?.analysis || typeof candidate.analysis !== "object") {
+                const err = new Error("Each candidate must include pre-extracted analysis data.");
+                err.status = 400;
+                throw err;
+            }
+        }
+
+        const { rankings } = await rankCandidatesAgainstJd(jdAnalysis, candidates);
+
+        try {
+            await writeCandidateRanking(rankings);
+        } catch (excelErr) {
+            console.error("❌ Ranking worksheet write failed:", excelErr.message);
+        }
+
+        return res.status(200).json({
+            success: true,
+            candidateRanking: { rankings },
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// =================================================
+// RESET EXCEL REPORT
+// =================================================
+
+exports.resetReport = async (req, res, next) => {
+    try {
+        await resetWorkbook();
+        return res.status(200).json({
+            success: true,
+            message: "Report reset successfully.",
+            reportFilename: "Resume Evaluation.xlsx",
+        });
+    } catch (error) {
         next(error);
     }
 };

@@ -15,8 +15,8 @@
   <div class="hero-section">
     <h1>Resume Analysis</h1>
     <p>
-      Upload up to {{ maxFiles }} resumes and let AI perform complete candidate analysis,
-      interview generation, evaluation and podcast creation.
+      Upload a Job Description and up to {{ maxFiles }} resumes to compare candidates,
+      or upload resumes alone for individual AI analysis, interview generation, evaluation and podcast creation.
     </p>
   </div>
 
@@ -38,6 +38,11 @@
       <p>Evaluate candidates using structured AI metrics.</p>
     </div>
     <div class="feature-card">
+      <div class="feature-icon">🏆</div>
+      <h3>Candidate Ranking</h3>
+      <p>Compare multiple candidates against a Job Description and rank by fit.</p>
+    </div>
+    <div class="feature-card">
       <div class="feature-icon">🎧</div>
       <h3>Podcast Creation</h3>
       <p>Convert interviews into engaging audio reports.</p>
@@ -52,7 +57,7 @@
         <h2>Upload Resumes</h2>
         <p>
           Drag &amp; drop or browse PDF/DOCX resumes (1–{{ maxFiles }} files, max 5MB each).
-          Resumes are analysed one by one in a queue.
+          Optionally upload a Job Description to rank 2+ candidates after analysis.
         </p>
       </div>
 
@@ -86,6 +91,35 @@
           </label>
         </div>
       </div>
+    </div>
+
+    <!-- JOB DESCRIPTION UPLOAD -->
+    <div class="jd-section">
+      <div class="jd-section-head">
+        <span class="jd-badge">Optional</span>
+        <h3>Job Description</h3>
+        <p>Upload one JD (PDF/DOCX) to rank candidates after all resumes are processed.</p>
+      </div>
+
+      <div class="jd-upload-row" *ngIf="!jdFile(); else jdSelected">
+        <label class="jd-upload-btn" [class.disabled]="isProcessing()">
+          📋 Upload Job Description
+          <input type="file"
+            accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            [disabled]="isProcessing()" (change)="onJdSelected($event)" hidden />
+        </label>
+      </div>
+
+      <ng-template #jdSelected>
+        <div class="jd-selected-item">
+          <span class="sel-icon">📋</span>
+          <span class="sel-name" [title]="jdFile()?.name">{{ jdFile()?.name }}</span>
+          <span class="sel-size">{{ ((jdFile()?.size ?? 0) / 1024 / 1024).toFixed(2) }} MB</span>
+          <button class="sel-remove" type="button" *ngIf="!isProcessing()" (click)="removeJobDescription()"
+            title="Remove job description" aria-label="Remove job description">✕</button>
+        </div>
+        <p class="jd-hint" *ngIf="jdAnalysis()">✓ Job description parsed and ready for ranking.</p>
+      </ng-template>
     </div>
 
     <!-- ERROR -->
@@ -168,6 +202,59 @@
       (downloadTranscript)="onDownloadTranscript($event)" (downloadReport)="onDownloadReport($event)"
       (downloadPodcast)="onDownloadPodcast($event)">
     </app-resume-card>
+  </div>
+
+  <!-- CANDIDATE RANKING -->
+  <div *ngIf="rankingInProgress()" class="ranking-card ranking-loading" role="status" aria-live="polite">
+    <div class="ranking-head">
+      <span class="ranking-badge">Comparative Analysis</span>
+      <h2>Candidate Ranking</h2>
+    </div>
+    <p class="ranking-status">🏆 Comparing candidates against the Job Description...</p>
+  </div>
+
+  <div *ngIf="rankingError()" class="error-card ranking-error">❌ {{ rankingError() }}</div>
+
+  <div *ngIf="candidateRanking() as ranking" class="ranking-card" role="region" aria-label="Candidate Ranking">
+    <div class="ranking-head">
+      <span class="ranking-badge">Comparative Analysis</span>
+      <h2>Candidate Ranking</h2>
+      <p *ngIf="jdAnalysis()?.jobTitle">Against: {{ jdAnalysis()?.jobTitle }}</p>
+    </div>
+
+    <div class="ranking-list">
+      <div class="ranking-item" *ngFor="let entry of ranking.rankings; trackBy: trackByRank">
+        <div class="ranking-item-head">
+          <div class="ranking-rank">Rank {{ entry.rank }}</div>
+          <div class="ranking-meta">
+            <div class="ranking-name">{{ entry.candidateName }}</div>
+            <div class="ranking-score">Match Score: <strong>{{ entry.matchScore }}%</strong></div>
+          </div>
+          <span [class]="'rec-badge ' + recommendationClass(entry.recommendation)">
+            {{ entry.recommendation }}
+          </span>
+        </div>
+
+        <div class="ranking-reason">
+          <h4>Reason</h4>
+          <p>{{ entry.reason }}</p>
+        </div>
+
+        <div class="ranking-bullets strengths" *ngIf="entry.rank <= 2 && entry.strengths.length">
+          <h4>Strengths</h4>
+          <ul>
+            <li *ngFor="let item of entry.strengths">{{ item }}</li>
+          </ul>
+        </div>
+
+        <div class="ranking-bullets weaknesses" *ngIf="entry.rank > 2 && entry.weaknesses.length">
+          <h4>Weaknesses</h4>
+          <ul>
+            <li *ngFor="let item of entry.weaknesses">{{ item }}</li>
+          </ul>
+        </div>
+      </div>
+    </div>
   </div>
 
 </div>

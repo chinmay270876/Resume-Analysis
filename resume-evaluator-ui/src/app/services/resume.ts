@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Observable, throwError } from 'rxjs';
 import { catchError } from 'rxjs/operators';
-import { UploadResult, UploadProgress } from '../models';
+import { UploadResult, UploadProgress, ParseJdResult, RankCandidatesResult, JdAnalysis, Analysis, Evaluation } from '../models';
 import { environment } from '../../environments/environment';
 
 @Injectable({
@@ -73,6 +73,30 @@ export class ResumeService {
     getUploadProgress(uploadId: string): Observable<UploadProgress> {
         const url = `${this.apiBase}/api/upload-progress/${encodeURIComponent(uploadId)}`;
         return this.http.get<UploadProgress>(url).pipe(
+            catchError(this.handleError)
+        );
+    }
+
+    parseJobDescription(file: File): Observable<ParseJdResult> {
+        const formData = new FormData();
+        formData.append('jobDescription', file);
+
+        return this.http.post<ParseJdResult>(
+            `${this.apiBase}/api/parse-jd`,
+            formData
+        ).pipe(
+            catchError(this.handleError)
+        );
+    }
+
+    rankCandidates(
+        jdAnalysis: JdAnalysis,
+        candidates: Array<{ analysis: Analysis; evaluation: Evaluation }>
+    ): Observable<RankCandidatesResult> {
+        return this.http.post<RankCandidatesResult>(
+            `${this.apiBase}/api/rank-candidates`,
+            { jdAnalysis, candidates }
+        ).pipe(
             catchError(this.handleError)
         );
     }

@@ -7,9 +7,11 @@ import { ToastService } from './toast';
 import {
   Analysis,
   AtsEvaluation,
+  CandidateRanking,
   Evaluation,
   InterviewTranscript,
   InterviewTurn,
+  JdAnalysis,
   RESUME_STAGES,
   ResumeProcessedResult,
   ResumeTask,
@@ -222,6 +224,15 @@ export class ResumeQueueService {
   readonly batchDownloading = signal<boolean>(false);
   /** Tracks which resume report is currently being downloaded (null = idle). */
   readonly downloadingReportId = signal<string | null>(null);
+  /** Optional uploaded job description file (not yet parsed). */
+  readonly jdFile = signal<File | null>(null);
+  /** Parsed job description analysis returned by the backend. */
+  readonly jdAnalysis = signal<JdAnalysis | null>(null);
+  /** Comparative ranking results (populated after all resumes finish). */
+  readonly candidateRanking = signal<CandidateRanking | null>(null);
+  /** True while JD is being parsed or candidates are being ranked. */
+  readonly rankingInProgress = signal<boolean>(false);
+  readonly rankingError = signal<string | null>(null);
 
   /** Returns the validation error message for a set of files, or null if valid. */
   validateFiles(files: FileList | File[]): string | null {
@@ -249,7 +260,7 @@ export class ResumeQueueService {
     return null;
   }
 
-  /** Adds valid PDF files to the selection queue (does not start processing). */
+  /** Adds valid PDF/DOCX files to the selection queue (does not start processing). */
   addFiles(files: FileList | File[]): string | null {
     const error = this.validateFiles(files);
     if (error) {
@@ -276,6 +287,38 @@ export class ResumeQueueService {
     return null;
   }
 
+  /** Sets or clears the optional job description file. */
+  setJobDescription(file: File | null): string | null {
+    if (!file) {
+      this.jdFile.set(null);
+      this.jdAnalysis.set(null);
+      this.candidateRanking.set(null);
+      this.rankingError.set(null);
+      return null;
+    }
+
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+    const isDocx =
+      file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+      file.name.toLowerCase().endsWith('.docx');
+    if (!isPdf && !isDocx) {
+      return `"${file.name}" is not a PDF or DOCX file.`;
+    }
+    if (file.size > MAX_SIZE_BYTES) {
+      return `"${file.name}" exceeds the 5MB limit.`;
+    }
+
+    this.jdFile.set(file);
+    this.jdAnalysis.set(null);
+    this.candidateRanking.set(null);
+    this.rankingError.set(null);
+    return null;
+  }
+
+  removeJobDescription(): void {
+    this.setJobDescription(null);
+  }
+
   /** Removes a selected (not yet completed/processing) resume. */
   removeTask(id: string): void {
     const target = this.taskList.find((t) => t.id === id);
@@ -298,12 +341,17 @@ export class ResumeQueueService {
     this.taskList = [];
     this.orderSeq = 0;
     this.processing = false;
+    this.jdFile.set(null);
+    this.jdAnalysis.set(null);
+    this.candidateRanking.set(null);
+    this.rankingInProgress.set(false);
+    this.rankingError.set(null);
     this.emitTasks();
     this.isProcessing.set(false);
     this.emitOverall();
   }
 
-  /** Starts sequential processing of all queued resumes. */
+  /** Starts sequential processing of all queued resumes (and optional JD parsing). */
   start(): void {
     if (this.processing) {
       return;
@@ -313,8 +361,54 @@ export class ResumeQueueService {
     if (!hasQueued) {
       return;
     }
+
+    const jdFile = this.jdFile();
+    if (jdFile) {
+      const completedCount = this.taskList.filter((t) => t.status === 'completed').length;
+      const queuedCount = this.taskList.filter((t) => t.status === 'queued').length;
+      if (queuedCount + completedCount < 2) {
+        this.rankingError.set('Upload at least 2 resumes when using a Job Description for ranking.');
+        return;
+      }
+
+      this.processing = true;
+      this.isProcessing.set(true);
+      this.rankingInProgress.set(true);
+      this.rankingError.set(null);
+      this.candidateRanking.set(null);
+
+      this.resumeService.parseJobDescription(jdFile).subscribe({
+        next: (response) => {
+          if (!response.success || !response.jdAnalysis) {
+            this.rankingInProgress.set(false);
+            this.processing = false;
+            this.isProcessing.set(false);
+            this.rankingError.set(response.message ?? 'Job description parsing failed.');
+            return;
+          }
+          this.jdAnalysis.set(response.jdAnalysis);
+          this.rankingInProgress.set(false);
+          this.startTimer();
+          this.processNext();
+        },
+        error: (err) => {
+          this.rankingInProgress.set(false);
+          this.processing = false;
+          this.isProcessing.set(false);
+          const message =
+            (err as { error?: { error?: string; message?: string } })?.error?.error ??
+            (err as { error?: { message?: string } })?.error?.message ??
+            'Job description parsing failed.';
+          this.rankingError.set(message);
+        },
+      });
+      return;
+    }
+
     this.processing = true;
     this.isProcessing.set(true);
+    this.rankingError.set(null);
+    this.candidateRanking.set(null);
     this.startTimer();
     this.processNext();
   }
@@ -604,6 +698,46 @@ export class ResumeQueueService {
     this.pollingSubscriptions.forEach((sub) => sub.unsubscribe());
     this.pollingSubscriptions.clear();
     this.emitOverall();
+    this.maybeRankCandidates();
+  }
+
+  private maybeRankCandidates(): void {
+    const jdAnalysis = this.jdAnalysis();
+    if (!jdAnalysis) {
+      return;
+    }
+
+    const completedTasks = this.taskList.filter((t) => t.status === 'completed' && t.result);
+    if (completedTasks.length < 2) {
+      return;
+    }
+
+    const candidates = completedTasks.map((t) => ({
+      analysis: t.result!.analysis,
+      evaluation: t.result!.evaluation,
+    }));
+
+    this.rankingInProgress.set(true);
+    this.rankingError.set(null);
+
+    this.resumeService.rankCandidates(jdAnalysis, candidates).subscribe({
+      next: (response) => {
+        this.rankingInProgress.set(false);
+        if (response.success && response.candidateRanking) {
+          this.candidateRanking.set(response.candidateRanking);
+        } else {
+          this.rankingError.set(response.message ?? 'Candidate ranking failed.');
+        }
+      },
+      error: (err) => {
+        this.rankingInProgress.set(false);
+        const message =
+          (err as { error?: { error?: string; message?: string } })?.error?.error ??
+          (err as { error?: { message?: string } })?.error?.message ??
+          'Candidate ranking failed.';
+        this.rankingError.set(message);
+      },
+    });
   }
 
   private startTimer(): void {

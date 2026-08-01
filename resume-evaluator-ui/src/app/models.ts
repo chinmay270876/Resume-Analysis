@@ -184,3 +184,47 @@ export interface ResumeTask {
   /** Backend upload/resume ID used for status polling. */
   uploadId?: string;
 }
+
+// =============================================================================
+// Job Description & Candidate Ranking
+// =============================================================================
+
+export interface JdAnalysis {
+  jobTitle: string;
+  mandatorySkills: string[];
+  preferredSkills: string[];
+  yearsOfExperience: string;
+  education: string;
+  certifications: string[];
+  domain: string;
+  roleDescription: string;
+  projectRelevance?: string;
+  technicalRequirements?: string[];
+}
+
+export interface RankedCandidate {
+  rank: number;
+  candidateName: string;
+  matchScore: number;
+  reason: string;
+  strengths: string[];
+  weaknesses: string[];
+  recommendation: 'Shortlist' | 'Hold' | 'Reject' | string;
+}
+
+export interface CandidateRanking {
+  rankings: RankedCandidate[];
+}
+
+export interface ParseJdResult {
+  success: boolean;
+  filename?: string;
+  jdAnalysis?: JdAnalysis;
+  message?: string;
+}
+
+export interface RankCandidatesResult {
+  success: boolean;
+  candidateRanking?: CandidateRanking;
+  message?: string;
+}
