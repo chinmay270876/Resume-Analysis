@@ -46,11 +46,6 @@ const {
 const lastReportStore = require("../utils/lastReportStore");
 
 const {
-    resetWorkbook,
-    MASTER_FILENAME,
-} = require("../services/excelService");
-
-const {
     sendInterviewInvite,
     isValidEmail
 } = require("../services/emailService");
@@ -58,6 +53,7 @@ const { v4: uuidv4 } = require("uuid");
 const fs = require("fs").promises;
 const path = require("path");
 const progressStore = require("../utils/progressStore");
+const { cleanupUpload } = require("../utils/progressStore");
 
 const VALID_EXTENSIONS = [".pdf", ".docx"];
 const MAX_RESUMES = 5;
@@ -104,7 +100,6 @@ function validateAnalysis(analysis) {
     analysis.yearsOfExperience = (cleanString(analysis.yearsOfExperience) || "").trim();
     analysis.role = (cleanString(analysis.role) || cleanString(analysis.roleTitle) || "").trim();
     analysis.interviewLevel = (cleanString(analysis.interviewLevel) || "").trim();
-    analysis.location = (cleanString(analysis.location) || "").trim();
 
     if (Array.isArray(analysis.skills)) {
         analysis.skills = analysis.skills.map((s) => cleanString(s)).filter(Boolean);
@@ -336,9 +331,7 @@ async function processResumeFile(file, resumeId, uploadId, onStatusUpdate, batch
             elapsedSeconds
         };
 
-        if (process.env.NODE_ENV !== "production") {
-            console.log("📌 [LOG] ATS data before returning API response:", JSON.stringify(responsePayload.atsEvaluation, null, 2));
-        }
+        console.log("📌 [LOG] ATS data before returning API response:", JSON.stringify(responsePayload.atsEvaluation, null, 2));
 
         // =================================================
         // STEP 5.5/7: Mark resume COMPLETED (synchronous, before return)
@@ -507,7 +500,7 @@ exports.uploadResume = async (
         const resumeId = uuidv4();
         const uploadId = resumeId;
 
-        const uploadEntry = progressStore.createUpload(uploadId, 1, Date.now());
+        const upload = progressStore.createUpload(uploadId, 1, Date.now());
         progressStore.addResume(uploadId, resumeId, req.file.originalname, req.file.filename);
 
         const result = await processResumeFile(req.file, resumeId, uploadId, (rid, status, extra) => {
@@ -520,9 +513,7 @@ exports.uploadResume = async (
             console.error("❌ Batch report finalize failed:", batchErr.message);
         }
 
-        if (process.env.NODE_ENV !== "production") {
-            console.log("📌 [LOG] ATS data before returning API response (http):", JSON.stringify(result.atsEvaluation, null, 2));
-        }
+        console.log("📌 [LOG] ATS data before returning API response (http):", JSON.stringify(result.atsEvaluation, null, 2));
 
         return res.status(200).json({
 
@@ -616,7 +607,7 @@ exports.uploadMultipleResumes = async (req, res, next) => {
         res.setHeader("Connection", "keep-alive");
         res.setHeader("X-Accel-Buffering", "no");
 
-        const uploadEntry = progressStore.createUpload(uploadId, totalResumes, startTime);
+        const upload = progressStore.createUpload(uploadId, totalResumes, startTime);
 
         console.log(`\n${"=".repeat(60)}`);
         console.log(`BATCH UPLOAD STARTED: ${totalResumes} resumes`);
@@ -642,7 +633,7 @@ exports.uploadMultipleResumes = async (req, res, next) => {
             const file = req.files[i];
             const resumeId = uuidv4();
 
-            uploadEntry.currentResumeIndex = i + 1;
+            upload.currentResumeIndex = i + 1;
 
             const resumeRecord = progressStore.addResume(uploadId, resumeId, file.originalname, file.filename);
 
@@ -677,9 +668,9 @@ exports.uploadMultipleResumes = async (req, res, next) => {
                     } else if (currentResumeProgress > 0 && (extra.elapsedSeconds || 0) > 0) {
                         const estimatedTotalTimeForCurrentResume = (extra.elapsedSeconds || 0) / (currentResumeProgress / 100);
                         estimatedRemainingTime = Math.round(estimatedTotalTimeForCurrentResume - overallElapsedSeconds);
-                    } else if (totalResumes > 0 && overallElapsedSeconds > 0 && uploadEntry.currentResumeIndex > 0) {
-                        const averageTimeSoFar = overallElapsedSeconds / uploadEntry.currentResumeIndex;
-                        estimatedRemainingTime = Math.round(averageTimeSoFar * (totalResumes - uploadEntry.currentResumeIndex));
+                    } else if (totalResumes > 0 && overallElapsedSeconds > 0 && upload.currentResumeIndex > 0) {
+                        const averageTimeSoFar = overallElapsedSeconds / upload.currentResumeIndex;
+                        estimatedRemainingTime = Math.round(averageTimeSoFar * (totalResumes - upload.currentResumeIndex));
                     }
 
                     safeWrite(`data: ${JSON.stringify({
@@ -777,7 +768,7 @@ exports.uploadMultipleResumes = async (req, res, next) => {
         safeWrite(`data: ${JSON.stringify({ type: "complete", ...response })}\n\n`);
         res.end();
 
-        progressStore.cleanupUpload(uploadId);
+        cleanupUpload(uploadId);
 
     } catch (error) {
 
@@ -808,6 +799,12 @@ exports.downloadTranscript = async (req, res, next) => {
         if (!safeFilename) {
             const err = new Error("No transcript has been generated yet");
             err.status = 404;
+            throw err;
+        }
+
+        if (filename && safeFilename !== filename) {
+            const err = new Error("Invalid filename");
+            err.status = 400;
             throw err;
         }
 
@@ -891,23 +888,5 @@ exports.downloadBatchReport = async (req, res, next) => {
             error.message = "Evaluation report not found. Upload a resume to generate it.";
         }
         next(error);
-    }
-};
-
-// =================================================
-// RESET REPORT (clears the shared workbook to its
-// header-only template at the start of a new session)
-// =================================================
-
-exports.resetReport = async (req, res, next) => {
-    try {
-        await resetWorkbook();
-        return res.status(200).json({
-            success: true,
-            message: "Report workbook reset to a clean header-only state.",
-            reportFilename: MASTER_FILENAME,
-        });
-    } catch (err) {
-        next(err);
     }
 };
