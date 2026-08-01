@@ -20,6 +20,8 @@ const HEADERS = [
     "Skills missed from JD",
     "Number of companies worked with",
     "Certification",
+    "Ranking",
+    "Reason for Rank",
 ];
 
 const RANKING_HEADERS = [
@@ -34,6 +36,7 @@ const WRAP_HEADERS = new Set([
     "Major Skills",
     "Skills missed from JD",
     "Certification",
+    "Reason for Rank",
     "Strengths / Weaknesses Summary",
 ]);
 
@@ -170,6 +173,43 @@ function findDuplicateRow(worksheet, name, lastCompany) {
     return matchRow;
 }
 
+function findRowsByCandidateName(worksheet, name) {
+    if (!name || name === MISSING_VALUE) return [];
+    const nameCol = HEADERS.indexOf("Name") + 1;
+    const key = name.toLowerCase().trim();
+    const rows = [];
+
+    worksheet.eachRow((row, rowNum) => {
+        if (rowNum === 1) return;
+        const rowName = String(row.getCell(nameCol).value || "").toLowerCase().trim();
+        if (rowName === key && rowName !== MISSING_VALUE) {
+            rows.push(rowNum);
+        }
+    });
+
+    return rows;
+}
+
+function updateCandidatesSheetRanking(worksheet, rankings) {
+    const rankingCol = HEADERS.indexOf("Ranking") + 1;
+    const reasonCol = HEADERS.indexOf("Reason for Rank") + 1;
+
+    for (const entry of rankings) {
+        const candidateName = safeName(entry.candidateName);
+        if (!candidateName) continue;
+
+        const rowNums = findRowsByCandidateName(worksheet, candidateName);
+        const rankValue = entry.rank != null ? String(entry.rank) : MISSING_VALUE;
+        const reasonValue = toExcelValue(entry.reason);
+
+        for (const rowNum of rowNums) {
+            const row = worksheet.getRow(rowNum);
+            row.getCell(rankingCol).value = rankValue;
+            row.getCell(reasonCol).value = reasonValue;
+        }
+    }
+}
+
 let excelMutex = Promise.resolve();
 
 async function appendOrUpdateCandidate(analysis, evaluation, atsEvaluation) {
@@ -229,6 +269,8 @@ async function _appendOrUpdateCandidateImpl(analysis, evaluation, atsEvaluation)
         "Skills missed from JD": toExcelValue(atsEvaluation?.missingKeywords),
         "Number of companies worked with": toExcelValue(analysis.numberOfCompaniesWorkedWith),
         "Certification": toExcelValue(analysis.certifications),
+        "Ranking": MISSING_VALUE,
+        "Reason for Rank": MISSING_VALUE,
     };
 
     if (existingRow) {
@@ -308,6 +350,7 @@ async function _writeCandidateRankingImpl(rankings) {
 
     const workbook = await getMasterWorkbook();
     const rankingSheet = ensureRankingWorksheet(workbook);
+    const candidatesSheet = workbook.getWorksheet("Candidates");
 
     while (rankingSheet.rowCount > 1) {
         rankingSheet.spliceRows(2, 1);
@@ -321,6 +364,22 @@ async function _writeCandidateRankingImpl(rankings) {
             "Strengths / Weaknesses Summary": formatStrengthsWeaknessesSummary(entry),
             "Recommendation": toExcelValue(entry.recommendation),
         });
+    }
+
+    if (candidatesSheet) {
+        updateCandidatesSheetRanking(candidatesSheet, rankings);
+
+        HEADERS.forEach((header) => {
+            const col = candidatesSheet.getColumn(header);
+            if (col) {
+                col.alignment = {
+                    vertical: "top",
+                    wrapText: WRAP_HEADERS.has(header),
+                };
+            }
+        });
+
+        autoSizeColumns(candidatesSheet);
     }
 
     RANKING_HEADERS.forEach((header) => {
