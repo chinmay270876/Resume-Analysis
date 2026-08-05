@@ -56,7 +56,7 @@ router.post(
 );
 
 // =====================================
-// Generate Structured Interview (JD-based)
+// Generate Structured Interview (JD-primary + resume personalization)
 // =====================================
 
 router.post(

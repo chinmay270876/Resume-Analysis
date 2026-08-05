@@ -74,6 +74,11 @@ const progressStore = require("../utils/progressStore");
 
 const MAX_RESUMES = 5;
 const MAX_RESUME_CHARS = 15000;
+const logVerbose = (...args) => {
+    if (process.env.NODE_ENV !== "production") {
+        console.log(...args);
+    }
+};
 
 async function safeUnlink(filePath) {
     if (!filePath) return;
@@ -190,13 +195,13 @@ async function processResumeFile(file, resumeId, uploadId, onStatusUpdate, batch
         // =================================================
 
         currentStage = "PDF Extraction";
-        console.log("Starting PDF extraction...");
+        logVerbose("Starting PDF extraction...");
 
         const resumeTextRaw = await timeStage("pdfExtraction", () =>
             extractPdfText(file.path)
         );
 
-        console.log("PDF extraction complete.");
+        logVerbose("PDF extraction complete.");
 
         if (!resumeTextRaw || resumeTextRaw.trim().length === 0) {
             const err = new Error("Could not extract any text from the uploaded resume. The file may be empty, scanned/image-based, or corrupted.");
@@ -213,7 +218,7 @@ async function processResumeFile(file, resumeId, uploadId, onStatusUpdate, batch
         // =================================================
 
         currentStage = "Resume Analysis";
-        console.log("Starting resume analysis...");
+        logVerbose("Starting resume analysis...");
 
         update("Analyzing Resume");
 
@@ -221,7 +226,7 @@ async function processResumeFile(file, resumeId, uploadId, onStatusUpdate, batch
             analyzeResume(resumeText)
         );
 
-        console.log("Resume analysis complete.");
+        logVerbose("Resume analysis complete.");
 
         if (!rawAnalysis || typeof rawAnalysis !== "object") {
             const err = new Error("Invalid resume analysis response from AI.");
@@ -239,7 +244,7 @@ async function processResumeFile(file, resumeId, uploadId, onStatusUpdate, batch
         // =================================================
 
         currentStage = "Interview Generation & ATS Evaluation";
-        console.log("Starting interview generation and ATS evaluation concurrently...");
+        logVerbose("Starting interview generation and ATS evaluation concurrently...");
 
         update("Generating Interview");
 
@@ -260,14 +265,14 @@ async function processResumeFile(file, resumeId, uploadId, onStatusUpdate, batch
         interviewTranscript = generatedTranscript;
         atsEvaluation = atsResult;
 
-        console.log("Interview generation and ATS evaluation complete.");
+        logVerbose("Interview generation and ATS evaluation complete.");
 
         // =================================================
         // STEP 4/7: Save Transcript + Candidate Evaluation (Concurrent)
         // =================================================
 
         currentStage = "Save Transcript & Evaluation";
-        console.log("Starting transcript save & candidate evaluation concurrently...");
+        logVerbose("Starting transcript save & candidate evaluation concurrently...");
 
         update("Evaluating Candidate");
 
@@ -284,7 +289,7 @@ async function processResumeFile(file, resumeId, uploadId, onStatusUpdate, batch
         evaluation = evalResult;
         trackFile(path.join(process.cwd(), process.env.REPORT_DIR || "results", transcriptFilename));
 
-        console.log("Transcript save and candidate evaluation complete.");
+        logVerbose("Transcript save and candidate evaluation complete.");
 
         if (!evaluation || typeof evaluation !== "object") {
             const err = new Error("Invalid evaluation response from AI.");
@@ -309,14 +314,14 @@ async function processResumeFile(file, resumeId, uploadId, onStatusUpdate, batch
         const endTime = Date.now();
         const elapsedSeconds = Math.round((endTime - startTime) / 1000);
 
-        console.log(`\n=== PIPELINE TIMINGS (${file.originalname}) ===`);
-        console.log(`PDF Extraction: ${stageTimings.pdfExtraction}s`);
-        console.log(`Resume Analysis: ${stageTimings.resumeAnalysis}s`);
-        console.log(`Interview Generation: ${stageTimings.interviewGeneration}s`);
-        console.log(`Save Transcript: ${stageTimings.saveTranscript}s`);
-        console.log(`Evaluation: ${stageTimings.evaluation}s`);
-        console.log(`Total (pre-response): ${elapsedSeconds}s`);
-        console.log(`==========================================\n`);
+        logVerbose(`\n=== PIPELINE TIMINGS (${file.originalname}) ===`);
+        logVerbose(`PDF Extraction: ${stageTimings.pdfExtraction}s`);
+        logVerbose(`Resume Analysis: ${stageTimings.resumeAnalysis}s`);
+        logVerbose(`Interview Generation: ${stageTimings.interviewGeneration}s`);
+        logVerbose(`Save Transcript: ${stageTimings.saveTranscript}s`);
+        logVerbose(`Evaluation: ${stageTimings.evaluation}s`);
+        logVerbose(`Total (pre-response): ${elapsedSeconds}s`);
+        logVerbose(`==========================================\n`);
 
         // Build the response payload. Podcast + reports + email run in the
         // background and are NOT awaited here, so the API returns immediately.
@@ -349,7 +354,7 @@ async function processResumeFile(file, resumeId, uploadId, onStatusUpdate, batch
             elapsedSeconds
         };
 
-        console.log("📌 [LOG] ATS data before returning API response:", JSON.stringify(responsePayload.atsEvaluation, null, 2));
+        logVerbose("📌 [LOG] ATS data before returning API response:", JSON.stringify(responsePayload.atsEvaluation, null, 2));
 
         // =================================================
         // STEP 5.5/7: Mark resume COMPLETED (synchronous, before return)
@@ -393,7 +398,7 @@ async function processResumeFile(file, resumeId, uploadId, onStatusUpdate, batch
             responsePayload.podcastPath = podcastPath;
 
             const podcastSeconds = Math.round((Date.now() - t0) / 100) / 100;
-            console.log(`Podcast (background): ${podcastSeconds}s`);
+            logVerbose(`Podcast (background): ${podcastSeconds}s`);
         }).catch(() => { /* logged inside runBackground */ });
 
         // =================================================
@@ -450,7 +455,7 @@ async function processResumeFile(file, resumeId, uploadId, onStatusUpdate, batch
             }
 
             const reportSeconds = Math.round((Date.now() - t0) / 100) / 100;
-            console.log(`Reports + Email (background): ${reportSeconds}s`);
+            logVerbose(`Reports + Email (background): ${reportSeconds}s`);
         }).catch(() => { /* logged inside runBackground */ });
 
         return responsePayload;
@@ -509,11 +514,11 @@ exports.uploadResume = async (
             throw err;
         }
 
-        console.log("-------------------------------------------------");
-        console.log("Resume uploaded");
-        console.log("-------------------------------------------------");
-        console.log("Resume filename:", req.file.filename);
-        console.log("Resume size:", req.file.size);
+        logVerbose("-------------------------------------------------");
+        logVerbose("Resume uploaded");
+        logVerbose("-------------------------------------------------");
+        logVerbose("Resume filename:", req.file.filename);
+        logVerbose("Resume size:", req.file.size);
 
         const resumeId = uuidv4();
         const uploadId = resumeId;
@@ -532,7 +537,7 @@ exports.uploadResume = async (
         }
 
         if (process.env.NODE_ENV !== "production") {
-            console.log("📌 [LOG] ATS data before returning API response (http):", JSON.stringify(result.atsEvaluation, null, 2));
+            logVerbose("📌 [LOG] ATS data before returning API response (http):", JSON.stringify(result.atsEvaluation, null, 2));
         }
 
         return res.status(200).json({
@@ -640,10 +645,10 @@ exports.uploadMultipleResumes = async (req, res, next) => {
 
         const upload = progressStore.createUpload(uploadId, totalResumes, startTime);
 
-        console.log(`\n${"=".repeat(60)}`);
-        console.log(`BATCH UPLOAD STARTED: ${totalResumes} resumes`);
-        console.log(`Upload ID: ${uploadId}`);
-        console.log(`${"=".repeat(60)}\n`);
+        logVerbose(`\n${"=".repeat(60)}`);
+        logVerbose(`BATCH UPLOAD STARTED: ${totalResumes} resumes`);
+        logVerbose(`Upload ID: ${uploadId}`);
+        logVerbose(`${"=".repeat(60)}\n`);
 
         const results = [];
         let completed = 0;
@@ -713,7 +718,7 @@ exports.uploadMultipleResumes = async (req, res, next) => {
                 results.push(result);
                 completed++;
                 totalProcessingTimeForFinishedResumes += result.elapsedSeconds;
-                console.log(`\n✅ Resume ${i + 1}/${totalResumes} completed: ${file.originalname} (${result.elapsedSeconds}s)\n`);
+                logVerbose(`\n✅ Resume ${i + 1}/${totalResumes} completed: ${file.originalname} (${result.elapsedSeconds}s)\n`);
             } catch (error) {
                 const elapsedSeconds = Math.round((Date.now() - startTime) / 1000);
                 const result = {
@@ -767,15 +772,15 @@ exports.uploadMultipleResumes = async (req, res, next) => {
         // finalize the shared batch workbook once.
         try {
             const batchFile = await finalizeBatchReport(uploadId);
-            console.log(`\n📊 Batch report finalized: ${batchFile}`);
+            logVerbose(`\n📊 Batch report finalized: ${batchFile}`);
         } catch (batchErr) {
             console.error("❌ Batch report finalize failed:", batchErr.message);
         }
 
-        console.log(`\n${"=".repeat(60)}`);
-        console.log(`BATCH UPLOAD COMPLETED: ${completed} succeeded, ${failed} failed`);
-        console.log(`Total time: ${overallElapsedSeconds}s`);
-        console.log(`${"=".repeat(60)}\n`);
+        logVerbose(`\n${"=".repeat(60)}`);
+        logVerbose(`BATCH UPLOAD COMPLETED: ${completed} succeeded, ${failed} failed`);
+        logVerbose(`Total time: ${overallElapsedSeconds}s`);
+        logVerbose(`${"=".repeat(60)}\n`);
 
         const response = {
             success: failed === 0,
@@ -831,8 +836,14 @@ exports.downloadTranscript = async (req, res, next) => {
             throw err;
         }
 
-        const reportDir = path.join(process.cwd(), process.env.REPORT_DIR || "results");
-        const filePath = path.join(reportDir, safeFilename);
+        const reportDir = path.resolve(process.cwd(), process.env.REPORT_DIR || "results");
+        const filePath = path.resolve(reportDir, safeFilename);
+
+        if (!filePath.startsWith(reportDir + path.sep)) {
+            const err = new Error("Invalid filename");
+            err.status = 400;
+            throw err;
+        }
 
         await fs.access(filePath);
 
@@ -926,9 +937,13 @@ exports.parseJobDescription = async (req, res, next) => {
             throw err;
         }
 
-        console.log("-------------------------------------------------");
-        console.log("Job Description uploaded:", req.file.originalname);
-        console.log("-------------------------------------------------");
+        await assertValidResumeFile(req.file);
+
+        if (process.env.NODE_ENV !== "production") {
+            logVerbose("-------------------------------------------------");
+            logVerbose("Job Description uploaded:", req.file.originalname);
+            logVerbose("-------------------------------------------------");
+        }
 
         const jdAnalysis = await parseJobDescription(req.file.path);
 
@@ -992,7 +1007,7 @@ exports.rankCandidates = async (req, res, next) => {
 };
 
 // =================================================
-// GENERATE STRUCTURED INTERVIEW QUESTIONS (JD-based)
+// GENERATE STRUCTURED INTERVIEW QUESTIONS (JD-primary + resume personalization)
 // =================================================
 
 exports.generateInterviewQuestions = async (req, res, next) => {
@@ -1007,14 +1022,23 @@ exports.generateInterviewQuestions = async (req, res, next) => {
             throw err;
         }
 
-        console.log("-------------------------------------------------");
-        console.log("Generate Interview — JD:", jdFile.originalname);
+        await assertValidResumeFile(jdFile);
         if (resumeFile) {
-            console.log("Generate Interview — Resume (optional, not used for questions):", resumeFile.originalname);
+            await assertValidResumeFile(resumeFile);
         }
-        console.log("-------------------------------------------------");
 
-        // Step 1: Parse JD (required). Optionally parse resume for scheduling metadata only.
+        if (process.env.NODE_ENV !== "production") {
+            logVerbose("-------------------------------------------------");
+            logVerbose("Generate Interview — JD:", jdFile.originalname);
+            if (resumeFile) {
+                logVerbose("Generate Interview — Resume (personalization):", resumeFile.originalname);
+            } else {
+                logVerbose("Generate Interview — Resume: not provided (JD-only plan)");
+            }
+            logVerbose("-------------------------------------------------");
+        }
+
+        // Step 1: Parse JD (required). Optionally parse resume for personalization + scheduling metadata.
         let analysis = null;
         const jdAnalysis = await parseJobDescription(jdFile.path);
 
@@ -1029,8 +1053,8 @@ exports.generateInterviewQuestions = async (req, res, next) => {
             }
         }
 
-        // Step 2: Generate structured interview question bank from JD only
-        const interview = await generateInterviewQuestions(jdAnalysis);
+        // Step 2: Interview plan — JD primary, resume personalization + gap questions when available
+        const interview = await generateInterviewQuestions(jdAnalysis, analysis);
 
         return res.status(200).json({
             success: true,

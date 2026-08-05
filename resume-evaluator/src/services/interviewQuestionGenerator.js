@@ -6,6 +6,15 @@ const path = require("path");
 const templateCache = new Map();
 const VALID_DIFFICULTIES = new Set(["Easy", "Medium", "Hard"]);
 
+const CANONICAL_SECTIONS = [
+    "Introduction",
+    "Current Project",
+    "JD Technical Questions",
+    "Resume + JD Combined",
+    "Behavioural",
+    "Closing",
+];
+
 async function getInterviewQuestionsPrompt() {
     if (templateCache.has("interview-questions-prompt")) {
         return templateCache.get("interview-questions-prompt");
@@ -27,15 +36,71 @@ function normalizeDifficulty(value) {
     return "Medium";
 }
 
+function buildResumeContext(resumeAnalysis) {
+    if (!resumeAnalysis || typeof resumeAnalysis !== "object") {
+        return "Not provided. Generate a JD-focused interview plan. Keep Current Project and Resume + JD Combined sections role-generic — do not invent employers, project names, or candidate details.";
+    }
+
+    const context = {
+        candidateName: resumeAnalysis.candidateName || resumeAnalysis.name || "",
+        email: resumeAnalysis.email || "",
+        currentCompany: resumeAnalysis.currentCompany || "",
+        currentDesignation: resumeAnalysis.currentDesignation || "",
+        yearsOfExperience: resumeAnalysis.yearsOfExperience || "",
+        role: resumeAnalysis.role || resumeAnalysis.roleTitle || "",
+        skills: Array.isArray(resumeAnalysis.skills) ? resumeAnalysis.skills : [],
+        experience: resumeAnalysis.experience || "",
+        certifications: Array.isArray(resumeAnalysis.certifications)
+            ? resumeAnalysis.certifications
+            : [],
+        highestEducation: resumeAnalysis.highestEducation || "",
+        strengths: Array.isArray(resumeAnalysis.strengths) ? resumeAnalysis.strengths : [],
+        weaknesses: Array.isArray(resumeAnalysis.weaknesses) ? resumeAnalysis.weaknesses : [],
+        location: resumeAnalysis.location || "",
+        additional: resumeAnalysis.additional || "",
+    };
+
+    return JSON.stringify(context, null, 2);
+}
+
 function normalizeQuestion(q, fallbackNo) {
+    const questionText = Array.isArray(q)
+        ? ""
+        : String(q?.question || (typeof q === "string" ? q : "")).trim();
+
     return {
         questionNo: Number(q?.questionNo) || fallbackNo,
         category: String(q?.category || "General").trim() || "General",
         difficulty: normalizeDifficulty(q?.difficulty),
         estimatedTime: String(q?.estimatedTime || "2 minutes").trim() || "2 minutes",
-        question: String(q?.question || "").trim(),
+        question: questionText,
+        // Kept for backward compatibility with previously stored interviews; new plans omit answers.
         expectedAnswer: String(q?.expectedAnswer || "").trim(),
     };
+}
+
+function normalizeSectionName(raw) {
+    const name = String(raw || "").trim();
+    if (!name) return "General";
+
+    const lower = name.toLowerCase();
+    if (lower.includes("intro")) return "Introduction";
+    if (
+        lower.includes("combined") ||
+        (lower.includes("resume") && lower.includes("jd")) ||
+        lower.includes("gap")
+    ) {
+        return "Resume + JD Combined";
+    }
+    if (lower.includes("technical") || lower.includes("jd tech")) return "JD Technical Questions";
+    if (lower.includes("current") || lower.includes("latest project") || lower === "project" || lower.includes("current project")) {
+        return "Current Project";
+    }
+    if (lower.includes("behav") || lower.includes("behaviour") || lower.includes("soft")) {
+        return "Behavioural";
+    }
+    if (lower.includes("clos")) return "Closing";
+    return name;
 }
 
 function normalizeInterview(raw, jdAnalysis) {
@@ -44,13 +109,17 @@ function normalizeInterview(raw, jdAnalysis) {
     let questionNo = 1;
 
     for (const section of sectionsIn) {
-        const sectionName = String(section?.sectionName || section?.name || "General").trim() || "General";
+        const sectionName = normalizeSectionName(
+            section?.sectionName || section?.title || section?.name || "General"
+        );
         const questionsIn = Array.isArray(section?.questions) ? section.questions : [];
         const questions = [];
 
         for (const q of questionsIn) {
             const normalized = normalizeQuestion(q, questionNo);
             if (!normalized.question) continue;
+            // Strip any answer content — this page is questions-only.
+            normalized.expectedAnswer = "";
             normalized.questionNo = questionNo;
             questions.push(normalized);
             questionNo += 1;
@@ -58,6 +127,24 @@ function normalizeInterview(raw, jdAnalysis) {
 
         if (questions.length > 0) {
             sections.push({ sectionName, questions });
+        }
+    }
+
+    // Prefer canonical section order when names match.
+    sections.sort((a, b) => {
+        const ai = CANONICAL_SECTIONS.indexOf(a.sectionName);
+        const bi = CANONICAL_SECTIONS.indexOf(b.sectionName);
+        const aOrder = ai === -1 ? 999 : ai;
+        const bOrder = bi === -1 ? 999 : bi;
+        return aOrder - bOrder;
+    });
+
+    // Re-number after sort so questionNo stays sequential in display order.
+    let renumber = 1;
+    for (const section of sections) {
+        for (const q of section.questions) {
+            q.questionNo = renumber;
+            renumber += 1;
         }
     }
 
@@ -80,9 +167,23 @@ function normalizeInterview(raw, jdAnalysis) {
     };
 }
 
-async function generateInterviewQuestions(jdAnalysis) {
-    // Backward compatible: older callers passed (resumeAnalysis, jdAnalysis)
-    if (arguments.length >= 2 && arguments[1] && typeof arguments[1] === "object") {
+/**
+ * Generate a JD-primary interview question plan, personalized with optional resume analysis.
+ * @param {object} jdAnalysis
+ * @param {object|null} [resumeAnalysis]
+ */
+async function generateInterviewQuestions(jdAnalysis, resumeAnalysis = null) {
+    // Legacy callers accidentally used (resume, jd). Detect and correct.
+    if (
+        arguments.length >= 2 &&
+        arguments[0] &&
+        typeof arguments[0] === "object" &&
+        arguments[1] &&
+        typeof arguments[1] === "object" &&
+        !jdAnalysis?.jobTitle &&
+        arguments[1]?.jobTitle
+    ) {
+        resumeAnalysis = arguments[0];
         jdAnalysis = arguments[1];
     }
 
@@ -95,18 +196,23 @@ async function generateInterviewQuestions(jdAnalysis) {
 
     try {
         const promptTemplate = await getInterviewQuestionsPrompt();
+        const resumeContext = buildResumeContext(resumeAnalysis);
 
         const prompt = promptTemplate
-            .replace("{{jdAnalysis}}", JSON.stringify(jdAnalysis, null, 2));
+            .replace("{{jdAnalysis}}", JSON.stringify(jdAnalysis, null, 2))
+            .replace("{{resumeAnalysis}}", resumeContext);
 
         const role = jdAnalysis.jobTitle || "the target role";
         const level = jdAnalysis.seniority || jdAnalysis.experienceLevel || "mid-level";
+        const hasResume = Boolean(resumeAnalysis && typeof resumeAnalysis === "object");
 
         const systemMessage =
-            `You are an expert technical interviewer designing a structured ~25-minute interview ` +
-            `for the ${role} role (${level}). ` +
-            `Generate 20–30 JD-based questions with expected answers. ` +
-            `Do not personalize for any specific candidate or resume. ` +
+            `You are an expert technical interviewer designing the interview plan for an AI Interview Bot. ` +
+            `Create a ~25-minute interview for the ${role} role (${level}) with 20–30 questions only. ` +
+            `Priority: (1) Job Description ~70–80%, (2) personalize from the candidate resume` +
+            `${hasResume ? "" : " (resume not provided — stay JD-focused)"}, ` +
+            `(3) probe Resume vs JD skill gaps. ` +
+            `Do NOT generate answers, transcripts, evaluations, or hire/reject decisions. ` +
             `Return only the required JSON structure.`;
 
         const interviewSchema = {
@@ -136,7 +242,6 @@ async function generateInterviewQuestions(jdAnalysis) {
                                                 difficulty: { type: "string", enum: ["Easy", "Medium", "Hard"] },
                                                 estimatedTime: { type: "string" },
                                                 question: { type: "string" },
-                                                expectedAnswer: { type: "string" },
                                             },
                                             required: [
                                                 "questionNo",
@@ -144,7 +249,6 @@ async function generateInterviewQuestions(jdAnalysis) {
                                                 "difficulty",
                                                 "estimatedTime",
                                                 "question",
-                                                "expectedAnswer",
                                             ],
                                             additionalProperties: false,
                                         },
@@ -171,11 +275,13 @@ async function generateInterviewQuestions(jdAnalysis) {
             interviewSchema
         );
 
-        console.log("======================================");
-        console.log("RAW INTERVIEW QUESTIONS AI RESPONSE");
-        console.log("======================================");
-        console.log(typeof content === "string" ? content.slice(0, 2000) : JSON.stringify(content).slice(0, 2000));
-        console.log("======================================");
+        if (process.env.NODE_ENV !== "production") {
+            console.log("======================================");
+            console.log("RAW INTERVIEW QUESTIONS AI RESPONSE");
+            console.log("======================================");
+            console.log(typeof content === "string" ? content.slice(0, 500) : JSON.stringify(content).slice(0, 500));
+            console.log("======================================");
+        }
 
         let parsed = content;
         if (typeof content === "string") {
@@ -205,10 +311,13 @@ async function generateInterviewQuestions(jdAnalysis) {
             0
         );
 
-        console.log(
-            `Successfully generated interview with ${interview.totalQuestions} questions ` +
-            `across ${interview.sections.length} sections.`
-        );
+        if (process.env.NODE_ENV !== "production") {
+            console.log(
+                `Successfully generated interview with ${interview.totalQuestions} questions ` +
+                `across ${interview.sections.length} sections` +
+                `${hasResume ? " (JD + resume personalized)" : " (JD-only)"}.`
+            );
+        }
 
         return interview;
     } catch (error) {

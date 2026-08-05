@@ -55,15 +55,15 @@ function shouldFallbackToHf(error) {
         return true;
     }
 
+    // Do not fallback on 401/invalid_api_key — that masks misconfiguration
+    // with a lower-quality secondary model and hides the real failure.
     return (
-        status === 401 ||
         status === 402 ||
         status === 429 ||
         status >= 500 ||
         code === "insufficient_quota" ||
-        code === "invalid_api_key" ||
         code === "rate_limit_exceeded" ||
-        !status
+        (!status && !code)
     );
 }
 
@@ -160,8 +160,10 @@ async function getAiResponse(prompt, userContent, model, temperature, responseFo
                     // Fallthrough
                 }
             }
-            console.warn("⚠️ Failed to parse JSON from AI response, returning raw string.");
-            return rawContent;
+            const err = new Error("AI returned a response that could not be parsed as JSON.");
+            err.status = 502;
+            err.stage = "ai-json-parse";
+            throw err;
         }
     }
 

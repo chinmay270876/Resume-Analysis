@@ -497,13 +497,121 @@ async function _writeCandidateRankingImpl(rankings) {
     return MASTER_FILENAME;
 }
 
+/** Columns for post-interview Excel summary (one row per candidate). */
+const INTERVIEW_SUMMARY_HEADERS = [
+    "Candidate Name",
+    "Role",
+    "Interview Date",
+    "Technical",
+    "Communication",
+    "Behaviour",
+    "JD Match",
+    "Overall Score",
+    "Recommendation",
+    "Result",
+];
+
+function scoreFromEval(nested, flat) {
+    if (nested && typeof nested === "object" && nested.score != null) {
+        return nested.score;
+    }
+    if (typeof nested === "number") return nested;
+    if (flat != null) return flat;
+    return MISSING_VALUE;
+}
+
+function resolveInterviewRole(interview) {
+    if (interview?.jobRole) return interview.jobRole;
+    const jd = interview?.jobDescription;
+    if (jd && typeof jd === "object" && jd.jobTitle) return jd.jobTitle;
+    const resume = interview?.resumeSummary;
+    if (resume && typeof resume === "object") {
+        return resume.role || resume.currentDesignation || MISSING_VALUE;
+    }
+    return MISSING_VALUE;
+}
+
+/**
+ * Generate a single-interview Excel summary after AI evaluation completes.
+ * Never invents scores — uses stored evaluation only.
+ */
+async function generateInterviewSummaryExcel(interview) {
+    if (!interview?.id) {
+        throw new Error("Interview is required for Excel summary.");
+    }
+    if (!interview.evaluation) {
+        throw new Error("Excel summary requires a completed AI evaluation.");
+    }
+
+    const dir = path.join(process.cwd(), REPORT_DIR, "interview-summaries");
+    await fsp.mkdir(dir, { recursive: true });
+
+    const safeId = String(interview.id).replace(/[^a-zA-Z0-9-_]/g, "");
+    const filename = `${safeId}_interview_summary.xlsx`;
+    const filepath = path.join(dir, filename);
+
+    const evaluation = interview.evaluation;
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = "Resume Evaluator";
+    workbook.created = new Date();
+
+    const sheet = workbook.addWorksheet("Interview Summary", {
+        views: [{ state: "frozen", ySplit: 1 }],
+    });
+
+    sheet.addRow(INTERVIEW_SUMMARY_HEADERS);
+    const headerRow = sheet.getRow(1);
+    headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
+    headerRow.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FF0E7490" },
+    };
+    headerRow.alignment = { vertical: "middle", horizontal: "center" };
+
+    sheet.addRow([
+        interview.candidateName || MISSING_VALUE,
+        resolveInterviewRole(interview),
+        interview.date || interview.interviewDate || MISSING_VALUE,
+        scoreFromEval(evaluation.technicalKnowledge, evaluation.technicalScore),
+        scoreFromEval(evaluation.communication, evaluation.communicationScore),
+        scoreFromEval(evaluation.behaviour, evaluation.behaviourScore),
+        scoreFromEval(evaluation.jdMatch, evaluation.jdMatchPercent),
+        evaluation.overallScore != null ? evaluation.overallScore : MISSING_VALUE,
+        evaluation.recommendation || MISSING_VALUE,
+        interview.result || evaluation.result || "Pending",
+    ]);
+
+    autoSizeColumns(sheet);
+    await workbook.xlsx.writeFile(filepath);
+
+    return { filename, filepath, relativePath: path.join(REPORT_DIR, "interview-summaries", filename) };
+}
+
+/**
+ * Build an in-memory Excel buffer for download (single interview).
+ */
+async function getInterviewSummaryExcelBuffer(interview) {
+    const generated = await generateInterviewSummaryExcel(interview);
+    const buffer = await fsp.readFile(generated.filepath);
+    return {
+        buffer,
+        contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename: generated.filename,
+        filepath: generated.filepath,
+    };
+}
+
 module.exports = {
     generateExcelReport,
     appendOrUpdateCandidate,
     resetWorkbook,
     writeCandidateRanking,
+    generateInterviewSummaryExcel,
+    getInterviewSummaryExcelBuffer,
     MASTER_FILENAME,
     MASTER_FILEPATH,
     HEADERS,
     RANKING_HEADERS,
+    INTERVIEW_SUMMARY_HEADERS,
 };

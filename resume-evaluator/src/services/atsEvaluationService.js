@@ -12,9 +12,12 @@ function getGrade(score) {
 
 async function evaluateAts(resumeText, analysis) {
     const startTime = Date.now();
-    console.log("=================================================");
-    console.log("🔍 ATS Evaluation Started");
-    console.log("=================================================");
+    const verbose = process.env.NODE_ENV !== "production";
+    if (verbose) {
+        console.log("=================================================");
+        console.log("🔍 ATS Evaluation Started");
+        console.log("=================================================");
+    }
 
     try {
         const prompt = `You are an ATS (Applicant Tracking System) compatibility expert. Analyze the provided resume text against modern ATS best practices and hiring standards.
@@ -144,22 +147,23 @@ RULES:
         };
 
         const timeTaken = Math.round((Date.now() - startTime) / 100) / 100;
-        console.log("✅ ATS Evaluation Completed");
-        console.log(`ATS Score: ${result.atsScore}`);
-        console.log(`ATS Grade: ${result.atsGrade}`);
-        console.log(`Time Taken: ${timeTaken}s`);
-        if (process.env.NODE_ENV !== "production") {
-            console.log("📌 [LOG] ATS data immediately after AI generation:", JSON.stringify(result, null, 2));
+        if (verbose) {
+            console.log("✅ ATS Evaluation Completed");
+            console.log(`ATS Score: ${result.atsScore}`);
+            console.log(`ATS Grade: ${result.atsGrade}`);
+            console.log(`Time Taken: ${timeTaken}s`);
+            console.log("=================================================");
         }
-        console.log("=================================================");
 
         return result;
 
     } catch (error) {
         const timeTaken = Math.round((Date.now() - startTime) / 100) / 100;
         console.error("❌ ATS Evaluation Error:", error.message);
-        console.log(`ATS Evaluation Failed after ${timeTaken}s`);
-        console.log("=================================================");
+        if (verbose) {
+            console.log(`ATS Evaluation Failed after ${timeTaken}s`);
+            console.log("=================================================");
+        }
         throw error;
     }
 }

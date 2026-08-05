@@ -1,20 +1,78 @@
-Generate a professional structured interview question bank for a ~25-minute interview.
+Generate an interview plan of questions that an AI Interview Bot will ask during a live ~25-minute interview.
 
-Base the questions ONLY on the job description analysis below. Do NOT personalize for any specific candidate, resume, employer, or project history.
+Return ONLY interview questions. Do NOT generate candidate answers, AI answers, fake conversation, transcript, evaluation, recommendation, or Selected/Rejected decisions.
+
+================================================================================
+PRIORITY ORDER (strict)
+================================================================================
+
+Priority 1 — Job Description (highest, ~70–80% of the interview):
+Thoroughly analyze the JD and identify required skills, responsibilities, technologies,
+frameworks, experience level, soft skills, mandatory requirements, and nice-to-have skills.
+Most technical questions MUST come from technologies/skills present in the JD.
+Do NOT ask about technologies absent from the JD unless they appear in the candidate's
+current/latest project on the resume.
+
+Priority 2 — Candidate Resume (personalization):
+Use the resume to personalize questions. Reference the candidate's actual current/latest
+project, company, role, technologies, certifications, years of experience, and education
+by name when available. Questions must sound specific to THIS candidate, not generic.
+
+Priority 3 — Gap Analysis (Resume vs JD):
+Compare resume skills/experience against JD requirements. Generate questions about missing
+or weak areas (e.g. JD requires Kubernetes + Kafka but resume only shows Docker).
+
+================================================================================
+QUESTION DISTRIBUTION (~20–30 total)
+================================================================================
+
+1. Introduction — exactly 2 questions
+   Examples: introduce yourself; walk through current role.
+
+2. Current Project — exactly 5 questions
+   Must reference the actual current/latest project from the resume when available
+   (architecture, challenges, scale/users, personal contribution, tech choices).
+
+3. JD Technical Questions — 10 to 12 questions
+   ONLY from technologies/skills/frameworks in the JD. Adapt difficulty to JD seniority.
+
+4. Resume + JD Combined — 4 to 5 questions
+   Connect resume experience to JD requirements (overlap AND gaps).
+   Include gap questions when skills are missing/weak on the resume.
+
+5. Behavioural — exactly 3 questions
+   Aligned with soft skills / responsibilities implied by the JD
+   (production issues, deadlines, teamwork, ownership).
+
+6. Closing — exactly 1 question
+   "Do you have any questions for us?" (or a close equivalent).
+
+================================================================================
+INPUTS
+================================================================================
 
 Job Description Analysis:
 {{jdAnalysis}}
 
-INSTRUCTIONS:
-1. Adapt question difficulty to the seniority/level implied by the job title and JD requirements.
-2. Produce approximately 20–30 questions across clear sections.
-3. Estimated total duration should be around 25 minutes.
-4. Every question MUST include: questionNo, category, difficulty (Easy|Medium|Hard), estimatedTime, question, expectedAnswer.
-5. Focus on JD mandatory skills, preferred skills, technical requirements, and responsibilities.
-6. Project/scenario questions should be role-generic (e.g. "Describe a project where you…") — do not invent or reference a specific candidate's employers or projects.
-7. Sections should include (as appropriate): Introduction, Technical Questions, Project Discussion, Behavioral Questions, Problem Solving, Scenario Based Questions, Closing Questions.
-8. Number questions sequentially across the entire interview (questionNo starts at 1).
-9. interviewTitle must be role-based only, e.g. "{Job Title} Interview" — never include a candidate name.
+Candidate Resume Analysis:
+{{resumeAnalysis}}
+
+================================================================================
+OUTPUT RULES
+================================================================================
+
+1. Produce approximately 20–30 questions total for ~25 minutes.
+2. Use these exact sectionName values in order:
+   "Introduction", "Current Project", "JD Technical Questions",
+   "Resume + JD Combined", "Behavioural", "Closing"
+3. Every question object MUST include: questionNo, category, difficulty (Easy|Medium|Hard),
+   estimatedTime, question.
+4. Do NOT include expectedAnswer, sample answers, or evaluation fields.
+5. Number questions sequentially across the entire interview (questionNo starts at 1).
+6. interviewTitle must be role-based, e.g. "{Job Title} Interview".
+7. If resume analysis is missing, still follow the section structure using JD-only content;
+   keep Current Project and Resume + JD Combined role-generic without inventing fake employers/projects.
+8. Questions must NOT be generic fluff — they must be grounded in the JD (and resume when present).
 
 OUTPUT FORMAT:
 Return ONLY a valid JSON object with this exact shape:
@@ -24,15 +82,14 @@ Return ONLY a valid JSON object with this exact shape:
   "totalQuestions": 25,
   "sections": [
     {
-      "sectionName": "Technical Questions",
+      "sectionName": "Introduction",
       "questions": [
         {
           "questionNo": 1,
-          "category": "Technical",
-          "difficulty": "Medium",
-          "estimatedTime": "2 minutes",
-          "question": "...",
-          "expectedAnswer": "..."
+          "category": "Introduction",
+          "difficulty": "Easy",
+          "estimatedTime": "1 minute",
+          "question": "..."
         }
       ]
     }

@@ -8,6 +8,7 @@ if (process.env.NODE_ENV !== "production") {
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
+const { apiKeyAuth } = require("./src/middleware/apiKeyAuth");
 
 const app = express();
 
@@ -32,6 +33,14 @@ if (!process.env.OPENAI_API_KEY) {
 
     process.exit(1);
 
+}
+
+if (process.env.NODE_ENV === "production" && !process.env.API_KEY) {
+    console.error(
+        "\x1b[31m%s\x1b[0m",
+        "CRITICAL ERROR: API_KEY is required in production. Without it, all /api routes are publicly accessible."
+    );
+    process.exit(1);
 }
 
 // ================================
@@ -113,16 +122,25 @@ app.use((req, res, next) => {
 // ================================
 // results/ is intentionally NOT served statically — it holds PII (Excel,
 // transcripts) and must be accessed only via authenticated download APIs.
-// output/ hosts podcast audio with UUID filenames; still gated by optional API_KEY
-// for /api/*, while media playback uses obscure paths (see frontend URL prefix).
+// output/ hosts podcast audio with UUID filenames. In production, require the same
+// API_KEY (header or ?api_key=) so media is not anonymously enumerable.
 
 const outputDirName = process.env.OUTPUT_DIR || "output";
-
-app.use(`/${outputDirName}`, express.static(path.join(process.cwd(), outputDirName), {
+const outputStatic = express.static(path.join(process.cwd(), outputDirName), {
     fallthrough: false,
     index: false,
     dotfiles: "deny",
-}));
+});
+
+app.use(`/${outputDirName}`, (req, res, next) => {
+    if (process.env.API_KEY) {
+        return apiKeyAuth(req, res, (err) => {
+            if (err) return next(err);
+            return outputStatic(req, res, next);
+        });
+    }
+    return outputStatic(req, res, next);
+});
 
 // ================================
 // Simple In-Memory Rate Limiter
@@ -205,7 +223,6 @@ app.get("/", (req, res) => {
 // Routes
 // ================================
 
-const { apiKeyAuth } = require("./src/middleware/apiKeyAuth");
 const resumeRoutes =
     require("./src/routes/resumeRoutes");
 const interviewRoutes =
@@ -253,6 +270,10 @@ const {
     startReminderScheduler,
     stopReminderScheduler,
 } = require("./src/services/interviewReminderService");
+const {
+    warnIfEmailEnvMissing,
+    ensureTransporterVerified,
+} = require("./src/services/emailService");
 
 const server = app.listen(PORT, () => {
     console.log(`🚀 Server Running on port ${PORT}`);
@@ -262,6 +283,12 @@ const server = app.listen(PORT, () => {
     } else {
         console.log(`📌 API URL: http://localhost:${PORT}`);
     }
+
+    warnIfEmailEnvMissing();
+    ensureTransporterVerified().catch((err) => {
+        console.error("[Email] Startup SMTP verify error:", err.message);
+        if (err.stack) console.error(err.stack);
+    });
 
     startReminderScheduler();
 });

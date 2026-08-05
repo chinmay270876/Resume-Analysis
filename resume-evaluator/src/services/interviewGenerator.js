@@ -46,7 +46,7 @@ async function generateInterview(analysis) {
             .replace(/\{\{role\}\}/gi, role)
             .replace(/\{\{interviewLevel\}\}/gi, interviewLevel);
 
-        const model = process.env.OPENAI_INTERVIEW_MODEL || process.env.MODEL_NAME || "gpt-4o-mini";;
+        const model = process.env.OPENAI_INTERVIEW_MODEL || process.env.MODEL_NAME || "gpt-4o-mini";
 
         // Define a strict JSON schema that guarantees the exact response structure
         const interviewSchema = {
@@ -97,11 +97,13 @@ async function generateInterview(analysis) {
             interviewSchema // Pass the strict schema to enforce the structure
         );
 
-        console.log("======================================");
-        console.log("RAW INTERVIEW TRANSCRIPT AI RESPONSE");
-        console.log("======================================");
-        console.log(content);
-        console.log("======================================");
+        if (process.env.NODE_ENV !== "production") {
+            console.log("======================================");
+            console.log("RAW INTERVIEW TRANSCRIPT AI RESPONSE");
+            console.log("======================================");
+            console.log(typeof content === "string" ? content.slice(0, 500) : "[object]");
+            console.log("======================================");
+        }
 
         let parsed = content;
         if (typeof content === "string") {
@@ -115,7 +117,9 @@ async function generateInterview(analysis) {
 
         // Since we are using strict schemas, we are guaranteed to have a parsed.transcript array
         if (parsed && Array.isArray(parsed.transcript)) {
-            console.log(`Successfully generated interview transcript with ${parsed.transcript.length} turns.`);
+            if (process.env.NODE_ENV !== "production") {
+                console.log(`Successfully generated interview transcript with ${parsed.transcript.length} turns.`);
+            }
             return parsed.transcript;
         }
 
