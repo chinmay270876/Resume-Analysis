@@ -8,6 +8,7 @@ debug-env.js
 # Uploads
 /uploads
 
-# Output
+# Output / private data
 /output
 /results
+/data

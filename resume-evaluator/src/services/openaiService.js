@@ -83,12 +83,13 @@ async function getAiResponse(prompt, userContent, model, temperature, responseFo
 
     try {
         const client = getOpenAIClient();
-        console.log("==================================");
-        console.log("OpenAI model:", targetModel);
-        console.log("HF model:", process.env.HF_MODEL);
-        console.log("HF Base URL:", process.env.HF_BASE_URL);
-        console.log("==================================");
-        console.log("HF MODEL USED:", process.env.HF_MODEL);
+        if (process.env.NODE_ENV !== "production") {
+            console.log("==================================");
+            console.log("OpenAI model:", targetModel);
+            console.log("HF model:", process.env.HF_MODEL);
+            console.log("HF Base URL:", process.env.HF_BASE_URL);
+            console.log("==================================");
+        }
         const response = await client.chat.completions.create({
             model: targetModel,
             temperature: temperature,
@@ -203,9 +204,9 @@ RULES:
 - Extract values verbatim. Do not guess.`;
 
     const model = process.env.MODEL_NAME || "gpt-4o-mini";
-    console.log("-------------------------------------------------");
-    console.log(`🚀 Starting Resume Analysis with ${model}`);
-    console.log("-------------------------------------------------");
+    if (process.env.NODE_ENV !== "production") {
+        console.log(`🚀 Starting Resume Analysis with ${model}`);
+    }
 
     return await getAiResponse(prompt, resumeText, model, 0.2, { type: "json_object" });
 }
@@ -225,9 +226,9 @@ Return a JSON object with a single key "transcript", which is an array of object
 }`;
 
     const model = process.env.MODEL_NAME || "gpt-4o-mini";
-    console.log("-------------------------------------------------");
-    console.log(`🚀 Generating Interview Transcript with ${model}`);
-    console.log("-------------------------------------------------");
+    if (process.env.NODE_ENV !== "production") {
+        console.log(`🚀 Generating Interview Transcript with ${model}`);
+    }
 
     return await getAiResponse(prompt, analysisData, model, 0.7, { type: "json_object" });
 }
@@ -247,9 +248,9 @@ Return a JSON object with the following structure:
 }`;
 
     const model = process.env.MODEL_NAME || "gpt-4o-mini";
-    console.log("-------------------------------------------------");
-    console.log(`📊 Starting Candidate Evaluation with ${model}`);
-    console.log("-------------------------------------------------");
+    if (process.env.NODE_ENV !== "production") {
+        console.log(`📊 Starting Candidate Evaluation with ${model}`);
+    }
 
     return await getAiResponse(prompt, interviewTranscript, model, 0.3, { type: "json_object" });
 }

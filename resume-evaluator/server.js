@@ -64,7 +64,15 @@ app.use(cors({
             console.log("====================================");
         }
 
-        if (!origin) return callback(null, true);
+        // In production, reject credentialed browser requests with no Origin.
+        // Non-browser clients (curl, server-to-server) typically omit Origin —
+        // those must use API_KEY when configured rather than open CORS.
+        if (!origin) {
+            if (process.env.NODE_ENV === "production") {
+                return callback(null, false);
+            }
+            return callback(null, true);
+        }
 
         if (allowedOrigins.includes(origin)) {
             if (process.env.NODE_ENV !== "production") {
@@ -77,9 +85,9 @@ app.use(cors({
             console.log("❌ Origin Blocked");
         }
 
-        return callback(new Error("Not allowed by CORS"));
+        return callback(null, false);
     },
-    methods: ["GET", "POST", "OPTIONS"],
+    methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     credentials: true,
 }));
 
@@ -101,14 +109,20 @@ app.use((req, res, next) => {
 });
 
 // ================================
-// Static File Serving (output, results)
+// Static File Serving (output only)
 // ================================
+// results/ is intentionally NOT served statically — it holds PII (Excel,
+// transcripts) and must be accessed only via authenticated download APIs.
+// output/ hosts podcast audio with UUID filenames; still gated by optional API_KEY
+// for /api/*, while media playback uses obscure paths (see frontend URL prefix).
 
 const outputDirName = process.env.OUTPUT_DIR || "output";
-const reportDirName = process.env.REPORT_DIR || "results";
 
-app.use(`/${outputDirName}`, express.static(path.join(process.cwd(), outputDirName)));
-app.use(`/${reportDirName}`, express.static(path.join(process.cwd(), reportDirName)));
+app.use(`/${outputDirName}`, express.static(path.join(process.cwd(), outputDirName), {
+    fallthrough: false,
+    index: false,
+    dotfiles: "deny",
+}));
 
 // ================================
 // Simple In-Memory Rate Limiter
@@ -191,10 +205,16 @@ app.get("/", (req, res) => {
 // Routes
 // ================================
 
+const { apiKeyAuth } = require("./src/middleware/apiKeyAuth");
 const resumeRoutes =
     require("./src/routes/resumeRoutes");
+const interviewRoutes =
+    require("./src/routes/interviewRoutes");
 
+// Opt-in: when API_KEY is set, all /api routes require it. Response shapes unchanged.
+app.use("/api", apiKeyAuth);
 app.use("/api", resumeRoutes);
+app.use("/api/interviews", interviewRoutes);
 
 // ================================
 // 404 Handler
@@ -229,6 +249,11 @@ app.use((err, req, res, next) => {
 // Graceful Shutdown
 // ================================
 
+const {
+    startReminderScheduler,
+    stopReminderScheduler,
+} = require("./src/services/interviewReminderService");
+
 const server = app.listen(PORT, () => {
     console.log(`🚀 Server Running on port ${PORT}`);
 
@@ -237,6 +262,8 @@ const server = app.listen(PORT, () => {
     } else {
         console.log(`📌 API URL: http://localhost:${PORT}`);
     }
+
+    startReminderScheduler();
 });
 
 function gracefulShutdown(signal) {
@@ -244,6 +271,7 @@ function gracefulShutdown(signal) {
     if (rateLimitInterval) {
         clearInterval(rateLimitInterval);
     }
+    stopReminderScheduler();
     server.close(() => {
         console.log("Server closed.");
         process.exit(0);

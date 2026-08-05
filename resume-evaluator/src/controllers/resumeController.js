@@ -44,6 +44,10 @@ const {
 } = require("../services/jdParserService");
 
 const {
+    generateInterviewQuestions
+} = require("../services/interviewQuestionGenerator");
+
+const {
     rankCandidatesAgainstJd
 } = require("../services/candidateRankingService");
 
@@ -62,13 +66,12 @@ const {
     sendInterviewInvite,
     isValidEmail
 } = require("../services/emailService");
+const { assertValidResumeFile } = require("../utils/fileValidation");
 const { v4: uuidv4 } = require("uuid");
 const fs = require("fs").promises;
 const path = require("path");
 const progressStore = require("../utils/progressStore");
-const { cleanupUpload } = require("../utils/progressStore");
 
-const VALID_EXTENSIONS = [".pdf", ".docx"];
 const MAX_RESUMES = 5;
 const MAX_RESUME_CHARS = 15000;
 
@@ -146,6 +149,8 @@ function validateAnalysis(analysis) {
 async function processResumeFile(file, resumeId, uploadId, onStatusUpdate, batchToken) {
     const startTime = Date.now();
     const createdFiles = [];
+
+    await assertValidResumeFile(file);
 
     // Track stage timings for pipeline logging.
     const stageTimings = {};
@@ -526,13 +531,16 @@ exports.uploadResume = async (
             console.error("❌ Batch report finalize failed:", batchErr.message);
         }
 
-        console.log("📌 [LOG] ATS data before returning API response (http):", JSON.stringify(result.atsEvaluation, null, 2));
+        if (process.env.NODE_ENV !== "production") {
+            console.log("📌 [LOG] ATS data before returning API response (http):", JSON.stringify(result.atsEvaluation, null, 2));
+        }
 
         return res.status(200).json({
 
             success: true,
 
             uploadId,
+            resumeId,
 
             fileName:
                 req.file.filename,
@@ -596,6 +604,16 @@ exports.uploadResume = async (
 // =================================================
 
 exports.uploadMultipleResumes = async (req, res, next) => {
+    // Hoisted so the catch path can always write without ReferenceError.
+    const safeWrite = (data) => {
+        try {
+            if (!res.writableEnded) {
+                res.write(data);
+            }
+        } catch (writeError) {
+            console.error("SSE write error:", writeError.message);
+        }
+    };
 
     try {
 
@@ -631,16 +649,6 @@ exports.uploadMultipleResumes = async (req, res, next) => {
         let completed = 0;
         let failed = 0;
         let totalProcessingTimeForFinishedResumes = 0;
-
-        const safeWrite = (data) => {
-            try {
-                if (!res.writableEnded) {
-                    res.write(data);
-                }
-            } catch (writeError) {
-                console.error("SSE write error:", writeError.message);
-            }
-        };
 
         for (let i = 0; i < req.files.length; i++) {
             const file = req.files[i];
@@ -781,15 +789,17 @@ exports.uploadMultipleResumes = async (req, res, next) => {
         safeWrite(`data: ${JSON.stringify({ type: "complete", ...response })}\n\n`);
         res.end();
 
-        cleanupUpload(uploadId);
+        // Keep progress in memory for TTL so clients can still poll podcast/email
+        // background updates after the SSE stream closes.
 
     } catch (error) {
-
+        if (!res.headersSent) {
+            return next(error);
+        }
         if (!res.writableEnded) {
             safeWrite(`data: ${JSON.stringify({ type: "error", error: error.message })}\n\n`);
             res.end();
         }
-
     }
 
 };
@@ -978,6 +988,77 @@ exports.rankCandidates = async (req, res, next) => {
         });
     } catch (error) {
         next(error);
+    }
+};
+
+// =================================================
+// GENERATE STRUCTURED INTERVIEW QUESTIONS (Resume + JD)
+// =================================================
+
+exports.generateInterviewQuestions = async (req, res, next) => {
+    const resumeFile = req.files?.resume?.[0] || null;
+    const jdFile = req.files?.jobDescription?.[0] || null;
+
+    try {
+        if (!resumeFile) {
+            const err = new Error("Resume file is required.");
+            err.status = 400;
+            err.stage = "generate-interview";
+            throw err;
+        }
+
+        if (!jdFile) {
+            const err = new Error("Job description file is required.");
+            err.status = 400;
+            err.stage = "generate-interview";
+            throw err;
+        }
+
+        console.log("-------------------------------------------------");
+        console.log("Generate Interview — Resume:", resumeFile.originalname);
+        console.log("Generate Interview — JD:", jdFile.originalname);
+        console.log("-------------------------------------------------");
+
+        // Step 1: Extract resume text
+        const resumeTextRaw = await extractPdfText(resumeFile.path);
+        if (!resumeTextRaw || resumeTextRaw.trim().length === 0) {
+            const err = new Error("Could not extract text from the uploaded resume.");
+            err.status = 400;
+            err.stage = "extract-resume";
+            throw err;
+        }
+
+        const resumeText = resumeTextRaw.length > MAX_RESUME_CHARS
+            ? resumeTextRaw.substring(0, MAX_RESUME_CHARS)
+            : resumeTextRaw;
+
+        // Step 2: Analyze resume + parse JD in parallel (reuse existing services)
+        const [rawAnalysis, jdAnalysis] = await Promise.all([
+            analyzeResume(resumeText),
+            parseJobDescription(jdFile.path),
+        ]);
+
+        const analysis = validateAnalysis(rawAnalysis);
+
+        // Step 3: Generate structured interview question bank
+        const interview = await generateInterviewQuestions(analysis, jdAnalysis);
+
+        return res.status(200).json({
+            success: true,
+            interview,
+            analysis,
+            jdAnalysis,
+        });
+    } catch (error) {
+        if (!error.stage) {
+            error.stage = "generate-interview";
+        }
+        next(error);
+    } finally {
+        await Promise.all([
+            resumeFile?.path ? safeUnlink(resumeFile.path) : Promise.resolve(),
+            jdFile?.path ? safeUnlink(jdFile.path) : Promise.resolve(),
+        ]);
     }
 };
 

@@ -1,0 +1,49 @@
+Generate a professional structured interview question bank for a ~25-minute interview.
+
+You must analyze BOTH the candidate resume analysis and the job description analysis below.
+
+Candidate Resume Analysis:
+{{resumeAnalysis}}
+
+Job Description Analysis:
+{{jdAnalysis}}
+
+Skill Gap (missing skills vs JD):
+{{missingSkills}}
+
+INSTRUCTIONS:
+1. Adapt question difficulty to the candidate's years of experience and interview level.
+2. Produce approximately 20–30 questions across clear sections.
+3. Estimated total duration should be around 25 minutes.
+4. Every question MUST include: questionNo, category, difficulty (Easy|Medium|Hard), estimatedTime, question, expectedAnswer.
+5. Personalize Project Discussion questions using the candidate's current project when available; if current project is missing, use their last/most recent project from experience.
+6. Project questions MUST cover architecture, technology choices (e.g. database), biggest challenge, scalability, security, and deployment when relevant.
+7. Include JD-based questions:
+   - Validate expertise on matching skills
+   - Probe missing skills vs the JD (without being unfair)
+8. Sections should include (as appropriate): Introduction, Technical Questions, Project Discussion, Behavioral Questions, Problem Solving, Scenario Based Questions, Closing Questions.
+9. Number questions sequentially across the entire interview (questionNo starts at 1).
+10. Do NOT invent fake employer/project names; use only what appears in the resume analysis. If a detail is unknown, ask generally without fabricating specifics.
+
+OUTPUT FORMAT:
+Return ONLY a valid JSON object with this exact shape:
+{
+  "interviewTitle": "",
+  "estimatedDuration": "25 minutes",
+  "totalQuestions": 25,
+  "sections": [
+    {
+      "sectionName": "Technical Questions",
+      "questions": [
+        {
+          "questionNo": 1,
+          "category": "Technical",
+          "difficulty": "Medium",
+          "estimatedTime": "2 minutes",
+          "question": "...",
+          "expectedAnswer": "..."
+        }
+      ]
+    }
+  ]
+}

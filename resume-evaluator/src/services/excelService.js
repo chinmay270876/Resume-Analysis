@@ -106,8 +106,9 @@ async function getMasterWorkbook() {
     const workbook = new ExcelJS.Workbook();
     const exists = await fsp.access(MASTER_FILEPATH).then(() => true).catch(() => false);
 
-    console.log("Opening Resume Evaluation.xlsx...");
-    console.log("Workbook exists:", exists);
+    if (process.env.NODE_ENV !== "production") {
+        console.log("Opening Resume Evaluation.xlsx... exists:", exists);
+    }
 
     let worksheet;
     if (exists) {
@@ -299,33 +300,38 @@ function updateCandidatesSheetRanking(worksheet, rankings) {
 
 let excelMutex = Promise.resolve();
 
-async function appendOrUpdateCandidate(analysis, evaluation, atsEvaluation) {
-    const nextTask = excelMutex.then(() => _appendOrUpdateCandidateImpl(analysis, evaluation, atsEvaluation));
+async function appendOrUpdateCandidate(analysis, evaluation, atsEvaluation, failed = false) {
+    const nextTask = excelMutex.then(() =>
+        _appendOrUpdateCandidateImpl(analysis, evaluation, atsEvaluation, failed)
+    );
     excelMutex = nextTask.catch(() => {});
     return nextTask;
 }
 
-async function _appendOrUpdateCandidateImpl(analysis, evaluation, atsEvaluation) {
+async function _appendOrUpdateCandidateImpl(analysis, evaluation, atsEvaluation, failed = false) {
     const candidateName =
-        safeName(analysis.candidateName) ||
-        safeName(analysis.name);
+        safeName(analysis?.candidateName) ||
+        safeName(analysis?.name);
 
-    console.log("Appending candidate:");
-    console.log(candidateName || MISSING_VALUE);
+    if (process.env.NODE_ENV !== "production") {
+        console.log("Appending candidate:", candidateName || MISSING_VALUE, failed ? "(failed)" : "");
+    }
 
     const workbook = await getMasterWorkbook();
     const worksheet = workbook.getWorksheet("Candidates");
 
     const lastCompanyRaw = safeName(
-        analysis.currentCompany ||
-        analysis.company ||
-        analysis.currentEmployer ||
-        analysis.employer ||
-        analysis.organization
+        analysis?.currentCompany ||
+        analysis?.company ||
+        analysis?.currentEmployer ||
+        analysis?.employer ||
+        analysis?.organization
     );
 
     let existingRow = findDuplicateRow(worksheet, candidateName, lastCompanyRaw);
-    console.log("Duplicate found:", existingRow !== null);
+    if (process.env.NODE_ENV !== "production") {
+        console.log("Duplicate found:", existingRow !== null);
+    }
 
     const MAX_ROW = 1048576;
     if (existingRow && (existingRow < 1 || existingRow > MAX_ROW)) {
@@ -335,29 +341,29 @@ async function _appendOrUpdateCandidateImpl(analysis, evaluation, atsEvaluation)
 
     const rowData = {
         "Name": toExcelValue(candidateName),
-        "Age": toExcelValue(analysis.age),
-        "Contact Number": toExcelValue(analysis.phone),
-        "Email Id": toExcelValue(analysis.email),
+        "Age": toExcelValue(analysis?.age),
+        "Contact Number": toExcelValue(analysis?.phone),
+        "Email Id": toExcelValue(analysis?.email),
         "Highest Education": toExcelValue(
-            analysis.highestEducation ||
-            analysis.education ||
-            analysis.qualification
+            analysis?.highestEducation ||
+            analysis?.education ||
+            analysis?.qualification
         ),
         "Years of Experience": toExcelValue(
-            analysis.yearsOfExperience ||
-            analysis.yoe ||
-            analysis.totalExperience ||
-            analysis.experienceYears
+            analysis?.yearsOfExperience ||
+            analysis?.yoe ||
+            analysis?.totalExperience ||
+            analysis?.experienceYears
         ),
-        "Notice Period": toExcelValue(analysis.noticePeriod),
+        "Notice Period": toExcelValue(analysis?.noticePeriod),
         "Last Company": toExcelValue(lastCompanyRaw),
-        "Location": toExcelValue(analysis.location),
-        "Major Skills": toExcelValue(analysis.skills),
+        "Location": toExcelValue(analysis?.location),
+        "Major Skills": toExcelValue(analysis?.skills),
         "Skills missed from JD": toExcelValue(atsEvaluation?.missingKeywords),
-        "Number of companies worked with": toExcelValue(analysis.numberOfCompaniesWorkedWith),
-        "Certification": toExcelValue(analysis.certifications),
-        "Ranking": MISSING_VALUE,
-        "Reason for Rank": MISSING_VALUE,
+        "Number of companies worked with": toExcelValue(analysis?.numberOfCompaniesWorkedWith),
+        "Certification": toExcelValue(analysis?.certifications),
+        "Ranking": failed ? "Failed" : MISSING_VALUE,
+        "Reason for Rank": failed ? "Resume processing failed" : MISSING_VALUE,
     };
 
     if (existingRow) {

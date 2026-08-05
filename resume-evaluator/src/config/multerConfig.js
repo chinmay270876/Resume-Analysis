@@ -47,4 +47,10 @@ const createMulter = (maxCount) => {
 module.exports = {
     single: (fieldName) => createMulter(1).single(fieldName),
     array: (fieldName, maxCount) => createMulter(maxCount).array(fieldName, maxCount),
+    fields: (fieldConfigs) => {
+        const maxCount = Array.isArray(fieldConfigs)
+            ? fieldConfigs.reduce((sum, f) => sum + (f.maxCount || 1), 0)
+            : 2;
+        return createMulter(maxCount).fields(fieldConfigs);
+    },
 };

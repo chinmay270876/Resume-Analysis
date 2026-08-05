@@ -26,7 +26,7 @@ async function appendCandidate(token, rowKey, analysis, evaluation, failed = fal
     }
 
     try {
-        await appendOrUpdateCandidate(analysis, evaluation, atsEvaluation);
+        await appendOrUpdateCandidate(analysis, evaluation, atsEvaluation, failed);
     } catch (err) {
         console.error("❌ Master workbook append failed:", err.message);
     }

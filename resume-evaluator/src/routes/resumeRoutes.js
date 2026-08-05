@@ -12,6 +12,7 @@ const {
     getUploadProgress,
     parseJobDescription,
     rankCandidates,
+    generateInterviewQuestions,
     resetReport
 } = require("../controllers/resumeController");
 
@@ -52,6 +53,19 @@ router.post(
 router.post(
     "/rank-candidates",
     rankCandidates
+);
+
+// =====================================
+// Generate Structured Interview (Resume + JD)
+// =====================================
+
+router.post(
+    "/generate-interview",
+    upload.fields([
+        { name: "resume", maxCount: 1 },
+        { name: "jobDescription", maxCount: 1 },
+    ]),
+    generateInterviewQuestions
 );
 
 // =====================================
