@@ -170,7 +170,8 @@ export interface ResumeProcessedResult {
 /** A single resume task tracked through the upload/processing queue. */
 export interface ResumeTask {
   id: string;
-  file: File;
+  /** Original File blob; null after session restore (browser refresh). */
+  file: File | null;
   fileName: string;
   fileSize: number;
   order: number;

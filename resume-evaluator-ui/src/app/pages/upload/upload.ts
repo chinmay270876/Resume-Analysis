@@ -4,7 +4,7 @@ import { RouterLink } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ResumeQueueService } from '../../services/resume-queue';
 import { ResumeService } from '../../services/resume';
-import { Analysis, JdAnalysis, ResumeTask, RankedCandidate, StructuredInterview } from '../../models';
+import { ResumeTask, RankedCandidate } from '../../models';
 import { ResumeCard } from '../../components/resume-card/resume-card';
 import { InterviewQuestionsCard } from '../../components/interview-questions-card/interview-questions-card';
 import { InterviewScheduler } from '../../components/interview-scheduler/interview-scheduler';
@@ -28,39 +28,32 @@ export class Upload implements OnInit {
   protected readonly downloadingBatch = this.queue.batchDownloading;
   protected readonly downloadingReportId = this.queue.downloadingReportId;
   protected readonly jdFile = this.queue.jdFile;
+  protected readonly jdFileMeta = this.queue.jdFileMeta;
   protected readonly jdAnalysis = this.queue.jdAnalysis;
   protected readonly candidateRanking = this.queue.candidateRanking;
   protected readonly rankingInProgress = this.queue.rankingInProgress;
   protected readonly rankingError = this.queue.rankingError;
+  protected readonly showQueue = this.queue.showQueue;
+
+  protected readonly interviewGenerating = this.queue.interviewGenerating;
+  protected readonly interviewError = this.queue.interviewError;
+  protected readonly structuredInterview = this.queue.structuredInterview;
+  protected readonly interviewAnalysis = this.queue.interviewAnalysis;
+  protected readonly interviewJdAnalysis = this.queue.interviewJdAnalysis;
 
   protected readonly isDragOver = signal(false);
   protected readonly error = signal<string | null>(null);
-  protected readonly showQueue = signal(false);
   protected readonly isDarkMode = signal(true);
-
-  protected readonly interviewGenerating = signal(false);
-  protected readonly interviewError = signal<string | null>(null);
-  protected readonly structuredInterview = signal<StructuredInterview | null>(null);
-  protected readonly interviewAnalysis = signal<Analysis | null>(null);
-  protected readonly interviewJdAnalysis = signal<JdAnalysis | null>(null);
 
   ngOnInit(): void {
     if (isPlatformBrowser(this.platformId)) {
-      this.resetSession();
+      // Do NOT reset the analysis session on route enter — ResumeQueueService
+      // holds (and sessionStorage restores) results across in-app navigation.
       const savedTheme = localStorage.getItem('theme');
       const isDark = savedTheme !== 'light';
       this.isDarkMode.set(isDark);
       this.applyTheme(isDark);
     }
-  }
-
-  /**
-   * Clears the in-memory upload queue on page load. Does NOT wipe the shared
-   * Excel workbook — that would destroy other users'/tabs' report data.
-   * Use the reset-report API explicitly when an admin needs a clean workbook.
-   */
-  private resetSession(): void {
-    this.queue.reset();
   }
 
   protected toggleTheme(): void {
@@ -139,14 +132,10 @@ export class Upload implements OnInit {
       return;
     }
     this.error.set(null);
-    this.showQueue.set(true);
   }
 
   protected removeResume(id: string): void {
     this.queue.removeTask(id);
-    if (this.tasks().length === 0) {
-      this.showQueue.set(false);
-    }
   }
 
   protected startProcessing(): void {
@@ -154,14 +143,10 @@ export class Upload implements OnInit {
     this.queue.start();
   }
 
-  protected resetAll(): void {
-    this.queue.clearCompleted();
-    this.showQueue.set(false);
+  /** Explicit user action: wipe all Resume Analysis state and sessionStorage. */
+  protected clearResults(): void {
+    this.queue.clearResults();
     this.error.set(null);
-    this.structuredInterview.set(null);
-    this.interviewAnalysis.set(null);
-    this.interviewJdAnalysis.set(null);
-    this.interviewError.set(null);
   }
 
   protected canGenerateInterview(): boolean {
@@ -175,36 +160,33 @@ export class Upload implements OnInit {
     const jd = this.jdFile();
 
     if (!jd) {
-      this.interviewError.set('Job description file is required to generate an interview.');
+      this.queue.setInterviewError('Job description file is required to generate an interview.');
       return;
     }
 
-    this.interviewError.set(null);
-    this.structuredInterview.set(null);
-    this.interviewAnalysis.set(null);
-    this.interviewJdAnalysis.set(null);
-    this.interviewGenerating.set(true);
+    this.queue.setInterviewError(null);
+    this.queue.setInterviewResult(null, null, null);
+    this.queue.setInterviewGenerating(true);
 
     // Questions are JD-based; resume is optional metadata only (not used for question content).
     this.resumeService.generateInterview(jd, resumeTask?.file ?? null).subscribe({
       next: (result) => {
-        this.interviewGenerating.set(false);
+        this.queue.setInterviewGenerating(false);
         if (result?.success && result.interview) {
-          this.structuredInterview.set(result.interview);
-          // Keep analysis available for scheduling payload, but do not prefill candidate fields.
-          this.interviewAnalysis.set(result.analysis || null);
-          this.interviewJdAnalysis.set(
+          this.queue.setInterviewResult(
+            result.interview,
+            result.analysis || null,
             result.jdAnalysis || this.jdAnalysis() || null
           );
         } else {
-          this.interviewError.set(result?.error || result?.message || 'Failed to generate interview.');
+          this.queue.setInterviewError(result?.error || result?.message || 'Failed to generate interview.');
         }
       },
       error: (err: HttpErrorResponse) => {
-        this.interviewGenerating.set(false);
+        this.queue.setInterviewGenerating(false);
         const body = err?.error;
         const message = body?.error || body?.message || err?.message || 'Failed to generate interview.';
-        this.interviewError.set(message);
+        this.queue.setInterviewError(message);
       },
     });
   }
@@ -234,11 +216,20 @@ export class Upload implements OnInit {
   protected removeJobDescription(): void {
     if (!this.isProcessing() && !this.interviewGenerating()) {
       this.queue.removeJobDescription();
-      this.structuredInterview.set(null);
-      this.interviewAnalysis.set(null);
-      this.interviewJdAnalysis.set(null);
-      this.interviewError.set(null);
     }
+  }
+
+  protected hasJobDescription(): boolean {
+    return !!this.jdFile() || !!this.jdFileMeta();
+  }
+
+  protected jdDisplayName(): string {
+    return this.jdFile()?.name ?? this.jdFileMeta()?.name ?? '';
+  }
+
+  protected jdDisplaySizeMb(): string {
+    const size = this.jdFile()?.size ?? this.jdFileMeta()?.size ?? 0;
+    return (size / 1024 / 1024).toFixed(2);
   }
 
   protected schedulerResumeId(): string | null {

@@ -103,7 +103,7 @@
         <p>Upload one JD (PDF/DOCX) to rank candidates after all resumes are processed.</p>
       </div>
 
-      <div class="jd-upload-row" *ngIf="!jdFile(); else jdSelected">
+      <div class="jd-upload-row" *ngIf="!hasJobDescription(); else jdSelected">
         <label class="jd-upload-btn" [class.disabled]="isProcessing()">
           📋 Upload Job Description
           <input type="file"
@@ -115,12 +115,13 @@
       <ng-template #jdSelected>
         <div class="jd-selected-item">
           <span class="sel-icon">📋</span>
-          <span class="sel-name" [title]="jdFile()?.name">{{ jdFile()?.name }}</span>
-          <span class="sel-size">{{ ((jdFile()?.size ?? 0) / 1024 / 1024).toFixed(2) }} MB</span>
+          <span class="sel-name" [title]="jdDisplayName()">{{ jdDisplayName() }}</span>
+          <span class="sel-size">{{ jdDisplaySizeMb() }} MB</span>
           <button class="sel-remove" type="button" *ngIf="!isProcessing()" (click)="removeJobDescription()"
             title="Remove job description" aria-label="Remove job description">✕</button>
         </div>
         <p class="jd-hint" *ngIf="jdAnalysis()">✓ Job description parsed and ready for ranking.</p>
+        <p class="jd-hint" *ngIf="!jdFile() && jdFileMeta()">Re-upload the JD file to generate a new interview.</p>
       </ng-template>
     </div>
 
@@ -162,15 +163,21 @@
         </span>
       </button>
 
-      <button class="reset-btn" type="button" *ngIf="!isProcessing() && !interviewGenerating()" (click)="resetAll()">
-        Clear All
+      <button class="reset-btn" type="button" *ngIf="!isProcessing() && !interviewGenerating()" (click)="clearResults()">
+        Clear Results
       </button>
     </div>
 
-    <p class="interview-gen-hint" *ngIf="tasks().length > 0 && !jdFile()">
+    <div class="upload-actions" *ngIf="tasks().length === 0 && (structuredInterview() || candidateRanking() || hasJobDescription()) && !isProcessing() && !interviewGenerating()">
+      <button class="reset-btn" type="button" (click)="clearResults()">
+        Clear Results
+      </button>
+    </div>
+
+    <p class="interview-gen-hint" *ngIf="tasks().length > 0 && !hasJobDescription()">
       Upload a Job Description above to enable structured interview question generation.
     </p>
-    <p class="interview-gen-hint" *ngIf="tasks().length > 0 && jdFile()">
+    <p class="interview-gen-hint" *ngIf="tasks().length > 0 && hasJobDescription()">
       Interview questions are generated from the Job Description only (not from any candidate resume).
     </p>
   </div>

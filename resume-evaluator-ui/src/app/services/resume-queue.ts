@@ -1,4 +1,4 @@
-import { Injectable, PLATFORM_ID, inject, signal } from '@angular/core';
+import { Injectable, PLATFORM_ID, effect, inject, signal } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 import { Observable, Subscription, throwError, interval } from 'rxjs';
 import { catchError, map, switchMap, take, filter } from 'rxjs/operators';
@@ -15,6 +15,7 @@ import {
   RESUME_STAGES,
   ResumeProcessedResult,
   ResumeTask,
+  StructuredInterview,
   UploadProgress,
   UploadProgressResume,
   UploadResult,
@@ -24,6 +25,35 @@ import { environment } from '../../environments/environment';
 const MAX_FILES = 5;
 const MAX_SIZE_BYTES = 5 * 1024 * 1024;
 const API_BASE = environment.apiUrl.replace(/\/api$/, '');
+/** sessionStorage key for Resume Analysis UI session (survives route recreation / soft refresh). */
+const SESSION_STORAGE_KEY = 'resume-analysis-session';
+const SESSION_VERSION = 1;
+
+interface JdFileMeta {
+  name: string;
+  size: number;
+}
+
+interface PersistedSession {
+  version: number;
+  tasks: Array<Omit<ResumeTask, 'file'> & { file: null }>;
+  orderSeq: number;
+  overall: {
+    total: number;
+    completed: number;
+    failed: number;
+    elapsedSeconds: number;
+  };
+  jdFileMeta: JdFileMeta | null;
+  jdAnalysis: JdAnalysis | null;
+  candidateRanking: CandidateRanking | null;
+  rankingError: string | null;
+  showQueue: boolean;
+  structuredInterview: StructuredInterview | null;
+  interviewAnalysis: Analysis | null;
+  interviewJdAnalysis: JdAnalysis | null;
+  interviewError: string | null;
+}
 
 function normalizeAnalysis(raw: Record<string, unknown> | undefined): Analysis | null {
   if (!raw) {
@@ -208,6 +238,8 @@ export class ResumeQueueService {
   private timerSubscription: Subscription | null = null;
   private currentSubscription: Subscription | null = null;
   private pollingSubscriptions = new Map<string, Subscription>();
+  /** Suppresses session writes while hydrating from sessionStorage. */
+  private hydrating = false;
 
   // --- Public signals (updated immutably to drive Angular change detection) ---
 
@@ -228,6 +260,8 @@ export class ResumeQueueService {
   readonly downloadingReportId = signal<string | null>(null);
   /** Optional uploaded job description file (not yet parsed). */
   readonly jdFile = signal<File | null>(null);
+  /** JD filename/size for UI when the File blob is unavailable after refresh. */
+  readonly jdFileMeta = signal<JdFileMeta | null>(null);
   /** Parsed job description analysis returned by the backend. */
   readonly jdAnalysis = signal<JdAnalysis | null>(null);
   /** Comparative ranking results (populated after all resumes finish). */
@@ -235,6 +269,38 @@ export class ResumeQueueService {
   /** True while JD is being parsed or candidates are being ranked. */
   readonly rankingInProgress = signal<boolean>(false);
   readonly rankingError = signal<string | null>(null);
+  /** Whether the results / queue section should be visible. */
+  readonly showQueue = signal(false);
+
+  /** Structured interview generation (kept here so route navigation does not wipe it). */
+  readonly interviewGenerating = signal(false);
+  readonly interviewError = signal<string | null>(null);
+  readonly structuredInterview = signal<StructuredInterview | null>(null);
+  readonly interviewAnalysis = signal<Analysis | null>(null);
+  readonly interviewJdAnalysis = signal<JdAnalysis | null>(null);
+
+  constructor() {
+    if (isPlatformBrowser(this.platformId)) {
+      this.restoreFromSession();
+      // Persist whenever durable session signals change (navigation-safe + soft refresh).
+      effect(() => {
+        this.tasks();
+        this.overall();
+        this.jdFileMeta();
+        this.jdAnalysis();
+        this.candidateRanking();
+        this.rankingError();
+        this.showQueue();
+        this.structuredInterview();
+        this.interviewAnalysis();
+        this.interviewJdAnalysis();
+        this.interviewError();
+        if (!this.hydrating) {
+          this.persistToSession();
+        }
+      });
+    }
+  }
 
   /** Returns the validation error message for a set of files, or null if valid. */
   validateFiles(files: FileList | File[]): string | null {
@@ -285,6 +351,7 @@ export class ResumeQueueService {
       };
       this.taskList = [...this.taskList, task];
     }
+    this.showQueue.set(true);
     this.emitTasks();
     return null;
   }
@@ -293,9 +360,11 @@ export class ResumeQueueService {
   setJobDescription(file: File | null): string | null {
     if (!file) {
       this.jdFile.set(null);
+      this.jdFileMeta.set(null);
       this.jdAnalysis.set(null);
       this.candidateRanking.set(null);
       this.rankingError.set(null);
+      this.clearInterviewResults();
       return null;
     }
 
@@ -311,9 +380,11 @@ export class ResumeQueueService {
     }
 
     this.jdFile.set(file);
+    this.jdFileMeta.set({ name: file.name, size: file.size });
     this.jdAnalysis.set(null);
     this.candidateRanking.set(null);
     this.rankingError.set(null);
+    this.clearInterviewResults();
     return null;
   }
 
@@ -331,9 +402,15 @@ export class ResumeQueueService {
     this.renumber();
     this.emitTasks();
     this.emitOverall();
+    if (this.taskList.length === 0 && !this.structuredInterview() && !this.candidateRanking()) {
+      this.showQueue.set(false);
+    }
   }
 
-  /** Clears all tasks and resets the service state. */
+  /**
+   * Clears all Resume Analysis session state (queue, ranking, interview, sessionStorage).
+   * Only call on explicit user action (Clear Results) — never on route enter.
+   */
   reset(): void {
     this.currentSubscription?.unsubscribe();
     this.currentSubscription = null;
@@ -344,13 +421,26 @@ export class ResumeQueueService {
     this.orderSeq = 0;
     this.processing = false;
     this.jdFile.set(null);
+    this.jdFileMeta.set(null);
     this.jdAnalysis.set(null);
     this.candidateRanking.set(null);
     this.rankingInProgress.set(false);
     this.rankingError.set(null);
+    this.showQueue.set(false);
+    this.interviewGenerating.set(false);
+    this.clearInterviewResults();
     this.emitTasks();
     this.isProcessing.set(false);
     this.emitOverall();
+    this.clearSessionStorage();
+  }
+
+  /** Alias used by the Upload page Clear Results action. */
+  clearResults(): void {
+    if (this.processing || this.interviewGenerating()) {
+      return;
+    }
+    this.reset();
   }
 
   /** Starts sequential processing of all queued resumes (and optional JD parsing). */
@@ -417,10 +507,33 @@ export class ResumeQueueService {
 
   /** Clears tasks only after they have all finished (completed/failed). */
   clearCompleted(): void {
-    if (this.processing) {
-      return;
-    }
-    this.reset();
+    this.clearResults();
+  }
+
+  /** Clears generated interview artefacts without wiping the resume queue. */
+  clearInterviewResults(): void {
+    this.structuredInterview.set(null);
+    this.interviewAnalysis.set(null);
+    this.interviewJdAnalysis.set(null);
+    this.interviewError.set(null);
+  }
+
+  setInterviewGenerating(value: boolean): void {
+    this.interviewGenerating.set(value);
+  }
+
+  setInterviewError(message: string | null): void {
+    this.interviewError.set(message);
+  }
+
+  setInterviewResult(
+    interview: StructuredInterview | null,
+    analysis: Analysis | null,
+    jdAnalysis: JdAnalysis | null
+  ): void {
+    this.structuredInterview.set(interview);
+    this.interviewAnalysis.set(analysis);
+    this.interviewJdAnalysis.set(jdAnalysis);
   }
 
   /** Downloads the interview transcript for a completed resume. */
@@ -536,6 +649,17 @@ export class ResumeQueueService {
       return;
     }
 
+    if (!next.file) {
+      this.updateTask(next.id, {
+        status: 'failed',
+        progress: 0,
+        stageIndex: -1,
+        error: 'Resume file is no longer available. Please re-upload this file.',
+      });
+      this.processNext();
+      return;
+    }
+
     this.updateTask(next.id, {
       status: 'processing',
       stageIndex: 0,
@@ -544,8 +668,9 @@ export class ResumeQueueService {
     });
 
     const stageTimer = this.createStageSimulation(next.id);
+    const file = next.file;
 
-    this.currentSubscription = this.resumeService.uploadResume(next.file)
+    this.currentSubscription = this.resumeService.uploadResume(file)
       .pipe(
         map((response) => {
           if (!response.success) {
@@ -872,5 +997,130 @@ export class ResumeQueueService {
   private safeName(task: ResumeTask, suffix: string): string {
     const base = task.fileName.replace(/\.pdf$/i, '').replace(/[^\w.-]+/g, '_');
     return `${base}_${suffix}`;
+  }
+
+  // --- Session persistence (sessionStorage) ---
+
+  private buildSessionSnapshot(): PersistedSession {
+    return {
+      version: SESSION_VERSION,
+      tasks: this.taskList.map(({ file: _file, ...rest }) => ({ ...rest, file: null })),
+      orderSeq: this.orderSeq,
+      overall: this.overall(),
+      jdFileMeta: this.jdFileMeta(),
+      jdAnalysis: this.jdAnalysis(),
+      candidateRanking: this.candidateRanking(),
+      rankingError: this.rankingError(),
+      showQueue: this.showQueue(),
+      structuredInterview: this.structuredInterview(),
+      interviewAnalysis: this.interviewAnalysis(),
+      interviewJdAnalysis: this.interviewJdAnalysis(),
+      interviewError: this.interviewError(),
+    };
+  }
+
+  private persistToSession(): void {
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
+    try {
+      const snapshot = this.buildSessionSnapshot();
+      const hasContent =
+        snapshot.tasks.length > 0 ||
+        !!snapshot.jdAnalysis ||
+        !!snapshot.candidateRanking ||
+        !!snapshot.structuredInterview ||
+        !!snapshot.jdFileMeta;
+      if (!hasContent) {
+        sessionStorage.removeItem(SESSION_STORAGE_KEY);
+        return;
+      }
+      sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(snapshot));
+    } catch {
+      // QuotaExceeded or private mode — ignore; in-memory state still works for navigation.
+    }
+  }
+
+  private clearSessionStorage(): void {
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
+    try {
+      sessionStorage.removeItem(SESSION_STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+  }
+
+  private restoreFromSession(): void {
+    if (!isPlatformBrowser(this.platformId) || this.taskList.length > 0) {
+      return;
+    }
+    let raw: string | null = null;
+    try {
+      raw = sessionStorage.getItem(SESSION_STORAGE_KEY);
+    } catch {
+      return;
+    }
+    if (!raw) {
+      return;
+    }
+
+    try {
+      const snapshot = JSON.parse(raw) as PersistedSession;
+      if (!snapshot || snapshot.version !== SESSION_VERSION || !Array.isArray(snapshot.tasks)) {
+        this.clearSessionStorage();
+        return;
+      }
+
+      this.hydrating = true;
+
+      this.taskList = snapshot.tasks.map((t) => {
+        // Mid-flight tasks cannot resume without the File blob after a hard refresh.
+        if (t.status === 'processing') {
+          return {
+            ...t,
+            file: null,
+            status: 'failed' as const,
+            progress: 0,
+            stageIndex: -1,
+            error: t.error || 'Analysis was interrupted. Please re-upload and analyze again.',
+          };
+        }
+        return { ...t, file: null };
+      });
+      this.orderSeq = typeof snapshot.orderSeq === 'number' ? snapshot.orderSeq : this.taskList.length;
+      this.jdFile.set(null);
+      this.jdFileMeta.set(snapshot.jdFileMeta ?? null);
+      this.jdAnalysis.set(snapshot.jdAnalysis ?? null);
+      this.candidateRanking.set(snapshot.candidateRanking ?? null);
+      this.rankingError.set(snapshot.rankingError ?? null);
+      this.rankingInProgress.set(false);
+      this.structuredInterview.set(snapshot.structuredInterview ?? null);
+      this.interviewAnalysis.set(snapshot.interviewAnalysis ?? null);
+      this.interviewJdAnalysis.set(snapshot.interviewJdAnalysis ?? null);
+      this.interviewError.set(snapshot.interviewError ?? null);
+      this.interviewGenerating.set(false);
+      this.processing = false;
+      this.isProcessing.set(false);
+
+      const shouldShowQueue =
+        snapshot.showQueue ||
+        this.taskList.length > 0 ||
+        !!snapshot.structuredInterview ||
+        !!snapshot.candidateRanking;
+      this.showQueue.set(shouldShowQueue);
+
+      this.emitTasks();
+      if (snapshot.overall) {
+        this.overall.set(snapshot.overall);
+      } else {
+        this.emitOverall();
+      }
+    } catch {
+      this.clearSessionStorage();
+    } finally {
+      this.hydrating = false;
+    }
   }
 }
