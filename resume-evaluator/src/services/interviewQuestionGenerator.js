@@ -18,48 +18,6 @@ async function getInterviewQuestionsPrompt() {
     return promptTemplate;
 }
 
-function toSkillList(value) {
-    if (Array.isArray(value)) {
-        return value.map((s) => String(s || "").trim().toLowerCase()).filter(Boolean);
-    }
-    if (typeof value === "string" && value.trim()) {
-        return value.split(/[,;|]/).map((s) => s.trim().toLowerCase()).filter(Boolean);
-    }
-    return [];
-}
-
-function computeMissingSkills(resumeAnalysis, jdAnalysis) {
-    const candidateSkills = new Set([
-        ...toSkillList(resumeAnalysis?.skills),
-        ...toSkillList(resumeAnalysis?.strengths),
-    ]);
-
-    const required = [
-        ...toSkillList(jdAnalysis?.mandatorySkills),
-        ...toSkillList(jdAnalysis?.preferredSkills),
-        ...toSkillList(jdAnalysis?.technicalRequirements),
-    ];
-
-    const missing = [];
-    const seen = new Set();
-    for (const skill of required) {
-        if (seen.has(skill)) continue;
-        seen.add(skill);
-
-        let found = false;
-        for (const owned of candidateSkills) {
-            if (owned.includes(skill) || skill.includes(owned)) {
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
-            missing.push(skill);
-        }
-    }
-    return missing;
-}
-
 function normalizeDifficulty(value) {
     const raw = String(value || "").trim();
     if (VALID_DIFFICULTIES.has(raw)) return raw;
@@ -80,7 +38,7 @@ function normalizeQuestion(q, fallbackNo) {
     };
 }
 
-function normalizeInterview(raw) {
+function normalizeInterview(raw, jdAnalysis) {
     const sectionsIn = Array.isArray(raw?.sections) ? raw.sections : [];
     const sections = [];
     let questionNo = 1;
@@ -104,8 +62,13 @@ function normalizeInterview(raw) {
     }
 
     const totalQuestions = sections.reduce((sum, s) => sum + s.questions.length, 0);
-    const interviewTitle = String(raw?.interviewTitle || "").trim()
-        || "Structured Interview";
+    const role = String(jdAnalysis?.jobTitle || "").trim();
+    const fallbackTitle = role ? `${role} Interview` : "Structured Interview";
+    let interviewTitle = String(raw?.interviewTitle || "").trim() || fallbackTitle;
+
+    // Ensure titles stay role-based (strip trailing " for {Candidate Name}" if the model adds it)
+    interviewTitle = interviewTitle.replace(/\s+for\s+.+$/i, "").trim() || fallbackTitle;
+
     const estimatedDuration = String(raw?.estimatedDuration || "").trim()
         || "25 minutes";
 
@@ -117,12 +80,10 @@ function normalizeInterview(raw) {
     };
 }
 
-async function generateInterviewQuestions(resumeAnalysis, jdAnalysis) {
-    if (!resumeAnalysis || typeof resumeAnalysis !== "object") {
-        const err = new Error("Resume analysis is required to generate interview questions.");
-        err.status = 400;
-        err.stage = "generate-interview";
-        throw err;
+async function generateInterviewQuestions(jdAnalysis) {
+    // Backward compatible: older callers passed (resumeAnalysis, jdAnalysis)
+    if (arguments.length >= 2 && arguments[1] && typeof arguments[1] === "object") {
+        jdAnalysis = arguments[1];
     }
 
     if (!jdAnalysis || typeof jdAnalysis !== "object") {
@@ -133,25 +94,19 @@ async function generateInterviewQuestions(resumeAnalysis, jdAnalysis) {
     }
 
     try {
-        const missingSkills = computeMissingSkills(resumeAnalysis, jdAnalysis);
         const promptTemplate = await getInterviewQuestionsPrompt();
 
         const prompt = promptTemplate
-            .replace("{{resumeAnalysis}}", JSON.stringify(resumeAnalysis, null, 2))
-            .replace("{{jdAnalysis}}", JSON.stringify(jdAnalysis, null, 2))
-            .replace("{{missingSkills}}", JSON.stringify(missingSkills, null, 2));
+            .replace("{{jdAnalysis}}", JSON.stringify(jdAnalysis, null, 2));
 
-        const candidateName = resumeAnalysis.candidateName || resumeAnalysis.name || "the candidate";
-        const role = jdAnalysis.jobTitle || resumeAnalysis.role || "the target role";
-        const level = resumeAnalysis.interviewLevel || "mid-level";
-        const experience = resumeAnalysis.yearsOfExperience || resumeAnalysis.experience || "not specified";
+        const role = jdAnalysis.jobTitle || "the target role";
+        const level = jdAnalysis.seniority || jdAnalysis.experienceLevel || "mid-level";
 
         const systemMessage =
             `You are an expert technical interviewer designing a structured ~25-minute interview ` +
-            `for ${candidateName} applying to ${role} (${level}). ` +
-            `Candidate experience: ${experience}. ` +
-            `Generate 20–30 personalized questions with expected answers. ` +
-            `Focus on current/last project depth and JD skill match vs gaps. ` +
+            `for the ${role} role (${level}). ` +
+            `Generate 20–30 JD-based questions with expected answers. ` +
+            `Do not personalize for any specific candidate or resume. ` +
             `Return only the required JSON structure.`;
 
         const interviewSchema = {
@@ -236,7 +191,7 @@ async function generateInterviewQuestions(resumeAnalysis, jdAnalysis) {
             }
         }
 
-        const interview = normalizeInterview(parsed);
+        const interview = normalizeInterview(parsed, jdAnalysis);
 
         if (!interview.sections.length || interview.totalQuestions === 0) {
             const err = new Error("AI response did not contain any interview questions.");
@@ -270,5 +225,4 @@ async function generateInterviewQuestions(resumeAnalysis, jdAnalysis) {
 
 module.exports = {
     generateInterviewQuestions,
-    computeMissingSkills,
 };

@@ -992,7 +992,7 @@ exports.rankCandidates = async (req, res, next) => {
 };
 
 // =================================================
-// GENERATE STRUCTURED INTERVIEW QUESTIONS (Resume + JD)
+// GENERATE STRUCTURED INTERVIEW QUESTIONS (JD-based)
 // =================================================
 
 exports.generateInterviewQuestions = async (req, res, next) => {
@@ -1000,13 +1000,6 @@ exports.generateInterviewQuestions = async (req, res, next) => {
     const jdFile = req.files?.jobDescription?.[0] || null;
 
     try {
-        if (!resumeFile) {
-            const err = new Error("Resume file is required.");
-            err.status = 400;
-            err.stage = "generate-interview";
-            throw err;
-        }
-
         if (!jdFile) {
             const err = new Error("Job description file is required.");
             err.status = 400;
@@ -1015,33 +1008,29 @@ exports.generateInterviewQuestions = async (req, res, next) => {
         }
 
         console.log("-------------------------------------------------");
-        console.log("Generate Interview — Resume:", resumeFile.originalname);
         console.log("Generate Interview — JD:", jdFile.originalname);
+        if (resumeFile) {
+            console.log("Generate Interview — Resume (optional, not used for questions):", resumeFile.originalname);
+        }
         console.log("-------------------------------------------------");
 
-        // Step 1: Extract resume text
-        const resumeTextRaw = await extractPdfText(resumeFile.path);
-        if (!resumeTextRaw || resumeTextRaw.trim().length === 0) {
-            const err = new Error("Could not extract text from the uploaded resume.");
-            err.status = 400;
-            err.stage = "extract-resume";
-            throw err;
+        // Step 1: Parse JD (required). Optionally parse resume for scheduling metadata only.
+        let analysis = null;
+        const jdAnalysis = await parseJobDescription(jdFile.path);
+
+        if (resumeFile) {
+            const resumeTextRaw = await extractPdfText(resumeFile.path);
+            if (resumeTextRaw && resumeTextRaw.trim().length > 0) {
+                const resumeText = resumeTextRaw.length > MAX_RESUME_CHARS
+                    ? resumeTextRaw.substring(0, MAX_RESUME_CHARS)
+                    : resumeTextRaw;
+                const rawAnalysis = await analyzeResume(resumeText);
+                analysis = validateAnalysis(rawAnalysis);
+            }
         }
 
-        const resumeText = resumeTextRaw.length > MAX_RESUME_CHARS
-            ? resumeTextRaw.substring(0, MAX_RESUME_CHARS)
-            : resumeTextRaw;
-
-        // Step 2: Analyze resume + parse JD in parallel (reuse existing services)
-        const [rawAnalysis, jdAnalysis] = await Promise.all([
-            analyzeResume(resumeText),
-            parseJobDescription(jdFile.path),
-        ]);
-
-        const analysis = validateAnalysis(rawAnalysis);
-
-        // Step 3: Generate structured interview question bank
-        const interview = await generateInterviewQuestions(analysis, jdAnalysis);
+        // Step 2: Generate structured interview question bank from JD only
+        const interview = await generateInterviewQuestions(jdAnalysis);
 
         return res.status(200).json({
             success: true,
