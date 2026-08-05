@@ -8,6 +8,7 @@ const MASTER_FILEPATH = path.join(process.cwd(), REPORT_DIR, MASTER_FILENAME);
 
 const HEADERS = [
     "Name",
+    "Ranking",
     "Age",
     "Contact Number",
     "Email Id",
@@ -20,7 +21,6 @@ const HEADERS = [
     "Skills missed from JD",
     "Number of companies worked with",
     "Certification",
-    "Ranking",
     "Reason for Rank",
 ];
 
@@ -120,10 +120,7 @@ async function getMasterWorkbook() {
         worksheet = workbook.addWorksheet("Candidates");
     }
 
-    worksheet.columns = HEADERS.map((header) => ({ header, key: header, width: 30 }));
-    worksheet.getRow(1).font = { bold: true };
-    worksheet.views = [{ state: "frozen", ySplit: 1 }];
-
+    ensureCandidatesWorksheetLayout(worksheet);
     ensureRankingWorksheet(workbook);
 
     return workbook;
@@ -138,6 +135,96 @@ function ensureRankingWorksheet(workbook) {
     rankingSheet.getRow(1).font = { bold: true };
     rankingSheet.views = [{ state: "frozen", ySplit: 1 }];
     return rankingSheet;
+}
+
+function readHeaderRow(worksheet) {
+    const headerRow = worksheet.getRow(1);
+    const headers = [];
+    headerRow.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+        headers[colNumber - 1] = String(cell.value || "").trim();
+    });
+    return headers;
+}
+
+function headersMatch(currentHeaders) {
+    if (currentHeaders.length !== HEADERS.length) return false;
+    return HEADERS.every((header, index) => currentHeaders[index] === header);
+}
+
+/** Rebuild Candidates sheet so columns match HEADERS (e.g. Ranking after Name). */
+function ensureCandidatesWorksheetLayout(worksheet) {
+    const currentHeaders = readHeaderRow(worksheet);
+    const hasDataRows = worksheet.rowCount > 1;
+
+    if (!hasDataRows || !currentHeaders.some(Boolean) || headersMatch(currentHeaders)) {
+        worksheet.columns = HEADERS.map((header) => ({ header, key: header, width: 30 }));
+        worksheet.getRow(1).font = { bold: true };
+        worksheet.views = [{ state: "frozen", ySplit: 1 }];
+        return;
+    }
+
+    const rows = [];
+    worksheet.eachRow((row, rowNum) => {
+        if (rowNum === 1) return;
+        const rowData = {};
+        HEADERS.forEach((header) => {
+            const oldIndex = currentHeaders.indexOf(header);
+            rowData[header] = oldIndex >= 0 ? (row.getCell(oldIndex + 1).value ?? MISSING_VALUE) : MISSING_VALUE;
+        });
+        rows.push(rowData);
+    });
+
+    while (worksheet.rowCount > 1) {
+        worksheet.spliceRows(2, 1);
+    }
+
+    worksheet.columns = HEADERS.map((header) => ({ header, key: header, width: 30 }));
+    worksheet.getRow(1).font = { bold: true };
+    worksheet.views = [{ state: "frozen", ySplit: 1 }];
+
+    for (const rowData of rows) {
+        worksheet.addRow(rowData);
+    }
+}
+
+function parseRankValue(value) {
+    if (value == null || value === MISSING_VALUE) return Number.POSITIVE_INFINITY;
+    const num = Number(String(value).trim());
+    return Number.isFinite(num) && num > 0 ? num : Number.POSITIVE_INFINITY;
+}
+
+/** Sort Candidates data rows by Ranking ascending (unranked last). */
+function sortCandidatesByRanking(worksheet) {
+    const rankingCol = HEADERS.indexOf("Ranking") + 1;
+    if (rankingCol < 1 || worksheet.rowCount <= 2) return;
+
+    const rows = [];
+    worksheet.eachRow((row, rowNum) => {
+        if (rowNum === 1) return;
+        const values = HEADERS.map((_, index) => row.getCell(index + 1).value);
+        rows.push({
+            rank: parseRankValue(row.getCell(rankingCol).value),
+            originalIndex: rowNum,
+            values,
+        });
+    });
+
+    rows.sort((a, b) => {
+        if (a.rank !== b.rank) return a.rank - b.rank;
+        return a.originalIndex - b.originalIndex;
+    });
+
+    while (worksheet.rowCount > 1) {
+        worksheet.spliceRows(2, 1);
+    }
+
+    for (const entry of rows) {
+        const rowData = {};
+        HEADERS.forEach((header, index) => {
+            rowData[header] = entry.values[index] ?? MISSING_VALUE;
+        });
+        worksheet.addRow(rowData);
+    }
 }
 
 function formatStrengthsWeaknessesSummary(entry) {
@@ -356,7 +443,11 @@ async function _writeCandidateRankingImpl(rankings) {
         rankingSheet.spliceRows(2, 1);
     }
 
-    for (const entry of rankings) {
+    const sortedRankings = [...rankings].sort(
+        (a, b) => (Number(a.rank) || Number.POSITIVE_INFINITY) - (Number(b.rank) || Number.POSITIVE_INFINITY)
+    );
+
+    for (const entry of sortedRankings) {
         rankingSheet.addRow({
             "Rank": toExcelValue(entry.rank),
             "Candidate Name": toExcelValue(entry.candidateName),
@@ -368,6 +459,7 @@ async function _writeCandidateRankingImpl(rankings) {
 
     if (candidatesSheet) {
         updateCandidatesSheetRanking(candidatesSheet, rankings);
+        sortCandidatesByRanking(candidatesSheet);
 
         HEADERS.forEach((header) => {
             const col = candidatesSheet.getColumn(header);
