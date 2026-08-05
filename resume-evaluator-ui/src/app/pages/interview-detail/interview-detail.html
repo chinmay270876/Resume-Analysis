@@ -1,0 +1,115 @@
+<div class="detail-page">
+  <div class="background-blur blur1"></div>
+  <div class="background-blur blur2"></div>
+
+  <div class="detail-nav">
+    <a routerLink="/dashboard" class="nav-link">← Dashboard</a>
+    <a routerLink="/" class="nav-link">Resume Analysis</a>
+  </div>
+
+  <div *ngIf="loading()" class="detail-state">Loading interview...</div>
+  <div *ngIf="error()" class="detail-error">{{ error() }}</div>
+
+  <ng-container *ngIf="!loading() && interview() as item">
+    <header class="detail-header">
+      <div>
+        <span class="detail-badge">Interview Details</span>
+        <h1>{{ item.candidateName }}</h1>
+        <p>{{ item.candidateEmail }}</p>
+      </div>
+      <span class="status-pill" [ngClass]="statusClass(item.status)">{{ item.status }}</span>
+    </header>
+
+    <div class="detail-actions">
+      <button
+        *ngIf="item.status === 'Scheduled' || item.status === 'Reminder Sent' || item.status === 'In Progress'"
+        type="button"
+        class="action-btn primary"
+        [disabled]="actionLoading()"
+        (click)="complete()">
+        Mark Completed
+      </button>
+      <button
+        *ngIf="item.status !== 'Cancelled' && item.status !== 'Completed'"
+        type="button"
+        class="action-btn danger"
+        [disabled]="actionLoading()"
+        (click)="cancel()">
+        Cancel Interview
+      </button>
+    </div>
+
+    <section class="detail-card">
+      <h2>Schedule</h2>
+      <div class="detail-grid">
+        <div><span>Date</span><strong>{{ item.date || '—' }}</strong></div>
+        <div><span>Time</span><strong>{{ item.time || '—' }}</strong></div>
+        <div><span>Timezone</span><strong>{{ item.timezone }}</strong></div>
+        <div><span>Duration</span><strong>{{ item.durationMinutes }} minutes</strong></div>
+        <div class="full">
+          <span>Meeting Link</span>
+          <strong>
+            <a
+              *ngIf="safeMeetingHref(item.meetingLink) as href"
+              [href]="href"
+              target="_blank"
+              rel="noopener noreferrer">{{ item.meetingLink }}</a>
+            <span *ngIf="!safeMeetingHref(item.meetingLink)">{{ item.meetingLink || '—' }}</span>
+          </strong>
+        </div>
+      </div>
+    </section>
+
+    <section class="detail-card">
+      <h2>Status &amp; Reminders</h2>
+      <div class="detail-grid">
+        <div><span>Status</span><strong>{{ item.status }}</strong></div>
+        <div><span>Reminder Status</span><strong>{{ item.reminderStatus?.label || 'Not Sent' }}</strong></div>
+        <div><span>Invitation Sent</span><strong>{{ item.invitationSent ? 'Yes' : 'No' }}</strong></div>
+        <div><span>Created</span><strong>{{ item.createdAt | date: 'medium' }}</strong></div>
+      </div>
+      <ul class="reminder-flags">
+        <li [class.done]="item.reminderStatus?.sent24h">24 hours before</li>
+        <li [class.done]="item.reminderStatus?.sent1h">1 hour before</li>
+        <li [class.done]="item.reminderStatus?.sent10m">10 minutes before</li>
+      </ul>
+    </section>
+
+    <section class="detail-card" *ngIf="asAnalysis(item.resumeSummary) as analysis">
+      <h2>Candidate / Resume</h2>
+      <div class="detail-grid">
+        <div><span>Name</span><strong>{{ analysis.candidateName }}</strong></div>
+        <div><span>Email</span><strong>{{ analysis.email }}</strong></div>
+        <div><span>Phone</span><strong>{{ analysis.phone || '—' }}</strong></div>
+        <div><span>Role</span><strong>{{ analysis.role || analysis.currentDesignation || '—' }}</strong></div>
+        <div><span>Experience</span><strong>{{ analysis.yearsOfExperience || '—' }}</strong></div>
+        <div><span>Location</span><strong>{{ analysis.location || '—' }}</strong></div>
+        <div class="full" *ngIf="analysis.skills?.length">
+          <span>Skills</span>
+          <strong>{{ analysis.skills.join(', ') }}</strong>
+        </div>
+      </div>
+    </section>
+
+    <section class="detail-card" *ngIf="asJd(item.jobDescription) as jd">
+      <h2>Job Description</h2>
+      <div class="detail-grid">
+        <div class="full"><span>Title</span><strong>{{ jd.jobTitle || '—' }}</strong></div>
+        <div class="full"><span>Domain</span><strong>{{ jd.domain || '—' }}</strong></div>
+        <div class="full" *ngIf="jd.roleDescription">
+          <span>Description</span>
+          <strong>{{ jd.roleDescription }}</strong>
+        </div>
+        <div class="full" *ngIf="jd.mandatorySkills?.length">
+          <span>Mandatory Skills</span>
+          <strong>{{ jd.mandatorySkills.join(', ') }}</strong>
+        </div>
+      </div>
+    </section>
+
+    <app-interview-questions-card
+      *ngIf="asStructuredInterview(item.interviewJson) as structured"
+      [interview]="structured">
+    </app-interview-questions-card>
+  </ng-container>
+</div>

@@ -1,0 +1,30 @@
+<div *ngIf="interview" class="result-card iq-card" role="region" [attr.aria-label]="interview.interviewTitle">
+  <div class="iq-header">
+    <span class="iq-badge">Interview Questions</span>
+    <h2>{{ interview.interviewTitle }}</h2>
+    <p class="iq-meta">
+      <span>{{ interview.totalQuestions }} questions</span>
+      <span class="iq-dot">·</span>
+      <span>{{ interview.estimatedDuration }}</span>
+    </p>
+  </div>
+
+  <div class="iq-section" *ngFor="let section of interview.sections; trackBy: trackBySection">
+    <h3 class="iq-section-title">{{ section.sectionName }}</h3>
+    <p class="iq-section-count">{{ section.questions.length }} question{{ section.questions.length === 1 ? '' : 's' }}</p>
+
+    <div class="iq-question" *ngFor="let q of section.questions; trackBy: trackByQuestion">
+      <div class="iq-question-head">
+        <span class="iq-qno">Q{{ q.questionNo }}</span>
+        <span class="iq-category">{{ q.category }}</span>
+        <span [class]="'iq-difficulty ' + difficultyClass(q.difficulty)">{{ q.difficulty }}</span>
+        <span class="iq-time">{{ q.estimatedTime }}</span>
+      </div>
+      <p class="iq-question-text">{{ q.question }}</p>
+      <div class="iq-answer" *ngIf="q.expectedAnswer">
+        <h4>Expected Answer</h4>
+        <p>{{ q.expectedAnswer }}</p>
+      </div>
+    </div>
+  </div>
+</div>

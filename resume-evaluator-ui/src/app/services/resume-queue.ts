@@ -19,9 +19,11 @@ import {
   UploadProgressResume,
   UploadResult,
 } from '../models';
+import { environment } from '../../environments/environment';
 
 const MAX_FILES = 5;
 const MAX_SIZE_BYTES = 5 * 1024 * 1024;
+const API_BASE = environment.apiUrl.replace(/\/api$/, '');
 
 function normalizeAnalysis(raw: Record<string, unknown> | undefined): Analysis | null {
   if (!raw) {
@@ -490,8 +492,9 @@ export class ResumeQueueService {
     if (!isPlatformBrowser(this.platformId) || !task.result?.raw.podcastPath) {
       return;
     }
+    const href = this.resolveMediaUrl(task.result.raw.podcastPath) || task.result.raw.podcastPath;
     const a = document.createElement('a');
-    a.href = task.result.raw.podcastPath;
+    a.href = href;
     a.download = this.safeName(task, 'Podcast.mp3');
     document.body.appendChild(a);
     a.click();
@@ -548,18 +551,27 @@ export class ResumeQueueService {
           if (!response.success) {
             throw new Error(response.message ?? 'Upload failed.');
           }
-          if (response.uploadId) {
-            this.updateTask(next.id, { uploadId: response.uploadId });
+          const resumeId = response.resumeId || response.uploadId;
+          if (response.uploadId || resumeId) {
+            this.updateTask(next.id, {
+              uploadId: response.uploadId,
+              resumeId,
+            });
           }
           const analysis = normalizeAnalysis(response.analysis);
           const evaluation = normalizeEvaluation(response.evaluation);
           const atsEvaluation = normalizeAts(response.atsEvaluation);
-          console.log("📌 [LOG] ATS data received in Angular:", atsEvaluation);
           if (!analysis || !evaluation) {
             throw new Error('Analysis from server was incomplete. Please try again.');
           }
+          const raw: UploadResult = {
+            ...response,
+            podcastPath: this.resolveMediaUrl(response.podcastPath) ?? response.podcastPath ?? null,
+            podcastScriptPath:
+              this.resolveMediaUrl(response.podcastScriptPath) ?? response.podcastScriptPath ?? null,
+          };
           return {
-            raw: response,
+            raw,
             analysis,
             evaluation,
             atsEvaluation,
@@ -593,8 +605,10 @@ export class ResumeQueueService {
           });
           // Poll for background task completion (podcast, email)
           const task = this.taskList.find((t) => t.id === next.id);
-          if (task?.uploadId) {
-            this.startStatusPolling(next.id, task.uploadId);
+          const pollUploadId = task?.uploadId;
+          const pollResumeId = task?.resumeId || task?.uploadId;
+          if (pollUploadId && pollResumeId) {
+            this.startStatusPolling(next.id, pollUploadId, pollResumeId);
           }
         },
         error: () => this.processNext(),
@@ -602,19 +616,35 @@ export class ResumeQueueService {
       });
   }
 
-  private startStatusPolling(taskId: string, uploadId: string): void {
+  /**
+   * Prefix relative media paths (e.g. /output/podcast_….mp3) with the API host
+   * so audio/downloads work when the UI and API are on different origins.
+   */
+  private resolveMediaUrl(path: string | null | undefined): string | null {
+    if (!path) {
+      return null;
+    }
+    if (/^https?:\/\//i.test(path)) {
+      return path;
+    }
+    const normalized = path.startsWith('/') ? path : `/${path}`;
+    return `${API_BASE}${normalized}`;
+  }
+
+  private startStatusPolling(taskId: string, uploadId: string, resumeId: string): void {
     if (this.pollingSubscriptions.has(taskId)) {
       return;
     }
 
     const subscription = interval(2000)
-        .pipe(
+      .pipe(
         take(60),
         switchMap(() => this.resumeService.getUploadProgress(uploadId)),
         map((progress: UploadProgress) => {
-          const resume = progress.resumes.find((r: UploadProgressResume) => r.resumeId === taskId);
-          if (!resume) return null;
-          return resume;
+          const resume =
+            progress.resumes.find((r: UploadProgressResume) => r.resumeId === resumeId) ||
+            (progress.resumes.length === 1 ? progress.resumes[0] : undefined);
+          return resume ?? null;
         }),
         filter((resume): resume is UploadProgressResume => resume !== null)
       )
@@ -625,13 +655,16 @@ export class ResumeQueueService {
 
           const rawPatch: Record<string, unknown> = {};
           let changed = false;
+          let terminal = false;
 
-          if (resume.podcastPath && task.result.raw['podcastPath'] !== resume.podcastPath) {
-            rawPatch['podcastPath'] = resume.podcastPath;
+          const nextPodcast = this.resolveMediaUrl(resume.podcastPath);
+          if (nextPodcast && task.result.raw['podcastPath'] !== nextPodcast) {
+            rawPatch['podcastPath'] = nextPodcast;
             changed = true;
           }
-          if (resume.podcastScriptPath && task.result.raw['podcastScriptPath'] !== resume.podcastScriptPath) {
-            rawPatch['podcastScriptPath'] = resume.podcastScriptPath;
+          const nextScript = this.resolveMediaUrl(resume.podcastScriptPath);
+          if (nextScript && task.result.raw['podcastScriptPath'] !== nextScript) {
+            rawPatch['podcastScriptPath'] = nextScript;
             changed = true;
           }
           if (resume.emailSent !== undefined && task.result.raw['emailSent'] !== resume.emailSent) {
@@ -647,6 +680,17 @@ export class ResumeQueueService {
             changed = true;
           }
 
+          const podcastReady = Boolean(nextPodcast || task.result.raw['podcastPath'] || resume.podcastPath);
+          const emailSettled =
+            resume.emailSent === true ||
+            resume.emailSkipped === true ||
+            Boolean(resume.emailError) ||
+            task.result.raw['emailSent'] === true ||
+            task.result.raw['emailSkipped'] === true;
+          if (podcastReady && emailSettled) {
+            terminal = true;
+          }
+
           if (changed) {
             this.updateTask(taskId, {
               result: {
@@ -654,6 +698,11 @@ export class ResumeQueueService {
                 raw: { ...task.result.raw, ...rawPatch },
               },
             });
+          }
+
+          if (terminal) {
+            subscription.unsubscribe();
+            this.pollingSubscriptions.delete(taskId);
           }
         },
         complete: () => {
@@ -695,8 +744,7 @@ export class ResumeQueueService {
     this.isProcessing.set(false);
     this.currentSubscription = null;
     this.stopTimer();
-    this.pollingSubscriptions.forEach((sub) => sub.unsubscribe());
-    this.pollingSubscriptions.clear();
+    // Do not cancel background podcast/email polls here — they outlive the upload queue.
     this.emitOverall();
     this.maybeRankCandidates();
   }

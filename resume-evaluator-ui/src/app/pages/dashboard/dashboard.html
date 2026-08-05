@@ -1,1 +1,81 @@
-<p>dashboard works!</p>
+<div class="dash-page">
+  <div class="background-blur blur1"></div>
+  <div class="background-blur blur2"></div>
+
+  <header class="dash-header">
+    <div>
+      <span class="dash-badge">Recruiter Dashboard</span>
+      <h1>Interview Management</h1>
+      <p>Track upcoming, today, completed, and cancelled interviews.</p>
+    </div>
+    <nav class="dash-nav">
+      <a routerLink="/" class="nav-link">Resume Analysis</a>
+      <button type="button" class="nav-link refresh" (click)="loadInterviews()" [disabled]="loading()">
+        Refresh
+      </button>
+    </nav>
+  </header>
+
+  <div class="dash-tabs" role="tablist">
+    <button
+      *ngFor="let tab of tabs"
+      type="button"
+      class="dash-tab"
+      role="tab"
+      [class.active]="activeTab() === tab.id"
+      [attr.aria-selected]="activeTab() === tab.id"
+      (click)="selectTab(tab.id)">
+      {{ tab.label }}
+    </button>
+  </div>
+
+  <div *ngIf="loading()" class="dash-state">Loading interviews...</div>
+  <div *ngIf="error()" class="dash-error">{{ error() }}</div>
+
+  <div *ngIf="!loading() && !error() && interviews().length === 0" class="dash-state">
+    No interviews in this view yet.
+  </div>
+
+  <div *ngIf="!loading() && interviews().length > 0" class="dash-list">
+    <article
+      *ngFor="let interview of interviews(); trackBy: trackById"
+      class="dash-card">
+      <div class="dash-card-main">
+        <div class="dash-card-title-row">
+          <h2>{{ interview.candidateName }}</h2>
+          <span class="status-pill" [ngClass]="statusClass(interview.status)">{{ interview.status }}</span>
+        </div>
+        <p class="dash-email">{{ interview.candidateEmail }}</p>
+        <div class="dash-meta">
+          <span>{{ interview.date || '—' }}</span>
+          <span class="dot">•</span>
+          <span>{{ interview.time || '—' }} ({{ interview.timezone }})</span>
+          <span class="dot">•</span>
+          <span>{{ interview.durationMinutes }} min</span>
+        </div>
+        <p class="dash-reminder">
+          Reminder: {{ interview.reminderStatus?.label || 'Not Sent' }}
+        </p>
+      </div>
+      <div class="dash-card-actions">
+        <a class="action-btn primary" [routerLink]="['/interviews', interview.id]">Details</a>
+        <button
+          *ngIf="interview.status === 'Scheduled' || interview.status === 'Reminder Sent' || interview.status === 'In Progress'"
+          type="button"
+          class="action-btn"
+          [disabled]="actionId() === interview.id"
+          (click)="completeInterview(interview)">
+          Complete
+        </button>
+        <button
+          *ngIf="interview.status !== 'Cancelled' && interview.status !== 'Completed'"
+          type="button"
+          class="action-btn danger"
+          [disabled]="actionId() === interview.id"
+          (click)="cancelInterview(interview)">
+          Cancel
+        </button>
+      </div>
+    </article>
+  </div>
+</div>

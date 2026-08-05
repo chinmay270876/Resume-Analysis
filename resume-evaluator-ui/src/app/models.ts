@@ -84,6 +84,8 @@ export interface UploadResult {
   success: boolean;
   message?: string;
   uploadId?: string;
+  /** Server-side resume UUID used for progress polling (may equal uploadId for single uploads). */
+  resumeId?: string;
   analysis?: Record<string, unknown>;
   evaluation?: Record<string, unknown>;
   atsEvaluation?: Record<string, unknown>;
@@ -181,8 +183,10 @@ export interface ResumeTask {
   elapsedSeconds: number;
   error: string | null;
   result: ResumeProcessedResult | null;
-  /** Backend upload/resume ID used for status polling. */
+  /** Backend upload ID used for progress polling. */
   uploadId?: string;
+  /** Backend resume UUID matched against progress.resumes[].resumeId. */
+  resumeId?: string;
 }
 
 // =============================================================================
@@ -228,3 +232,144 @@ export interface RankCandidatesResult {
   candidateRanking?: CandidateRanking;
   message?: string;
 }
+
+// =============================================================================
+// Structured Interview Question Bank (Resume + JD)
+// =============================================================================
+
+export interface InterviewQuestion {
+  questionNo: number;
+  category: string;
+  difficulty: 'Easy' | 'Medium' | 'Hard' | string;
+  estimatedTime: string;
+  question: string;
+  expectedAnswer: string;
+}
+
+export interface InterviewSection {
+  sectionName: string;
+  questions: InterviewQuestion[];
+}
+
+export interface StructuredInterview {
+  interviewTitle: string;
+  estimatedDuration: string;
+  totalQuestions: number;
+  sections: InterviewSection[];
+}
+
+export interface GenerateInterviewResult {
+  success: boolean;
+  interview?: StructuredInterview;
+  analysis?: Analysis;
+  jdAnalysis?: JdAnalysis;
+  message?: string;
+  error?: string;
+  stage?: string;
+}
+
+// =============================================================================
+// Interview Scheduling (Phase 2)
+// =============================================================================
+
+export type InterviewStatus =
+  | 'Draft'
+  | 'Scheduled'
+  | 'Reminder Sent'
+  | 'In Progress'
+  | 'Completed'
+  | 'Cancelled'
+  | 'Expired';
+
+export type InterviewListFilter = 'upcoming' | 'today' | 'completed' | 'cancelled';
+
+export interface InterviewReminderStatus {
+  label: string;
+  sent24h: boolean;
+  sent1h: boolean;
+  sent10m: boolean;
+  sent: string[];
+}
+
+export interface ScheduledInterview {
+  id: string;
+  candidateId: string;
+  resumeId: string | null;
+  jdId: string | null;
+  candidateName: string;
+  candidateEmail: string;
+  resumeSummary: Analysis | Record<string, unknown> | null;
+  jobDescription: JdAnalysis | Record<string, unknown> | null;
+  interviewJson: StructuredInterview | Record<string, unknown> | null;
+  date: string | null;
+  time: string | null;
+  timezone: string;
+  durationMinutes: number;
+  scheduledAt: string | null;
+  meetingLink: string;
+  status: InterviewStatus | string;
+  reminders?: {
+    sent24h?: boolean;
+    sent1h?: boolean;
+    sent10m?: boolean;
+  };
+  reminderStatus?: InterviewReminderStatus;
+  invitationSent?: boolean;
+  invitationSentAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateInterviewPayload {
+  candidateName: string;
+  candidateEmail: string;
+  date: string;
+  time: string;
+  timezone: string;
+  duration?: number;
+  durationMinutes?: number;
+  status?: InterviewStatus | string;
+  saveAsDraft?: boolean;
+  resumeId?: string | null;
+  jdId?: string | null;
+  candidateId?: string;
+  meetingLink?: string;
+  interview?: StructuredInterview | null;
+  interviewJson?: StructuredInterview | null;
+  analysis?: Analysis | null;
+  resumeSummary?: Analysis | null;
+  jdAnalysis?: JdAnalysis | null;
+  jobDescription?: JdAnalysis | null;
+}
+
+export interface InterviewListResult {
+  success: boolean;
+  count?: number;
+  interviews?: ScheduledInterview[];
+  message?: string;
+  error?: string;
+}
+
+export interface InterviewDetailResult {
+  success: boolean;
+  interview?: ScheduledInterview;
+  email?: { success?: boolean; skipped?: boolean; error?: string; messageId?: string } | null;
+  message?: string;
+  error?: string;
+}
+
+export const COMMON_TIMEZONES: string[] = [
+  'UTC',
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Los_Angeles',
+  'Europe/London',
+  'Europe/Paris',
+  'Europe/Berlin',
+  'Asia/Kolkata',
+  'Asia/Dubai',
+  'Asia/Singapore',
+  'Asia/Tokyo',
+  'Australia/Sydney',
+];

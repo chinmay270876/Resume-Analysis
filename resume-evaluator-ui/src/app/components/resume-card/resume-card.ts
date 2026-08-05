@@ -7,7 +7,6 @@ import {
 } from '../../models';
 import { AnalysisCard } from '../analysis-card/analysis-card';
 import { EvaluationCard } from '../evaluation-card/evaluation-card';
-import { InterviewViewer } from '../interview-viewer/interview-viewer';
 
 interface StatusMeta {
   label: string;
@@ -17,7 +16,7 @@ interface StatusMeta {
 @Component({
   selector: 'app-resume-card',
   standalone: true,
-  imports: [CommonModule, AnalysisCard, EvaluationCard, InterviewViewer],
+  imports: [CommonModule, AnalysisCard, EvaluationCard],
   templateUrl: './resume-card.html',
   styleUrl: './resume-card.css',
 })
@@ -27,7 +26,6 @@ export class ResumeCard {
   readonly downloadingReportId = input<string | null>(null);
 
   readonly remove = output<string>();
-  readonly downloadTranscript = output<ResumeTask>();
   readonly downloadReport = output<ResumeTask>();
   readonly downloadPodcast = output<ResumeTask>();
 
@@ -125,10 +123,6 @@ export class ResumeCard {
 
   protected onRemove(): void {
     this.remove.emit(this.task().id);
-  }
-
-  protected onDownloadTranscript(): void {
-    this.downloadTranscript.emit(this.task());
   }
 
   protected onDownloadReport(): void {

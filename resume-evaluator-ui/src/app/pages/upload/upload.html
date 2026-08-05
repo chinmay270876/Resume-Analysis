@@ -8,6 +8,8 @@
     <span class="theme-label">{{ isDarkMode() ? 'Light Mode' : 'Dark Mode' }}</span>
   </button>
 
+  <a routerLink="/dashboard" class="dashboard-nav-link">Interview Dashboard</a>
+
   <div class="background-blur blur1"></div>
   <div class="background-blur blur2"></div>
 
@@ -30,7 +32,7 @@
     <div class="feature-card">
       <div class="feature-icon">🎤</div>
       <h3>Interview Generator</h3>
-      <p>Create realistic AI interviews from resumes.</p>
+      <p>Build a structured 25-minute interview from Resume + JD.</p>
     </div>
     <div class="feature-card">
       <div class="feature-icon">📊</div>
@@ -149,10 +151,28 @@
         <span *ngIf="isProcessing()">🤖 Processing Resumes...</span>
       </button>
 
-      <button class="reset-btn" type="button" *ngIf="!isProcessing()" (click)="resetAll()">
+      <button class="interview-gen-btn" type="button"
+        [disabled]="!canGenerateInterview()"
+        (click)="generateInterview()"
+        [title]="!jdFile() ? 'Upload a Job Description to generate interview questions' : (tasks().length > 1 ? 'Uses the first selected resume + JD' : 'Generate structured interview from Resume + JD')">
+        <span *ngIf="!interviewGenerating()">🎤 Generate Interview</span>
+        <span *ngIf="interviewGenerating()" class="btn-content">
+          <span class="loader-sm"></span>
+          Generating Interview...
+        </span>
+      </button>
+
+      <button class="reset-btn" type="button" *ngIf="!isProcessing() && !interviewGenerating()" (click)="resetAll()">
         Clear All
       </button>
     </div>
+
+    <p class="interview-gen-hint" *ngIf="tasks().length > 0 && !jdFile()">
+      Upload a Job Description above to enable structured interview question generation (Resume + JD).
+    </p>
+    <p class="interview-gen-hint" *ngIf="tasks().length > 1 && jdFile()">
+      Interview generation uses the first selected resume together with the Job Description.
+    </p>
   </div>
 
   <!-- OVERALL BATCH PROGRESS -->
@@ -199,7 +219,7 @@
   <div *ngIf="showQueue()" class="queue">
     <app-resume-card *ngFor="let task of tasks(); trackBy: trackByTask" [task]="task" [canRemove]="!isProcessing()"
       [downloadingReportId]="downloadingReportId()" (remove)="removeResume($event)"
-      (downloadTranscript)="onDownloadTranscript($event)" (downloadReport)="onDownloadReport($event)"
+      (downloadReport)="onDownloadReport($event)"
       (downloadPodcast)="onDownloadPodcast($event)">
     </app-resume-card>
   </div>
@@ -214,6 +234,27 @@
   </div>
 
   <div *ngIf="rankingError()" class="error-card ranking-error">❌ {{ rankingError() }}</div>
+
+  <div *ngIf="interviewGenerating()" class="ranking-card ranking-loading" role="status" aria-live="polite">
+    <div class="ranking-head">
+      <span class="ranking-badge">Interview Generator</span>
+      <h2>Structured Interview</h2>
+    </div>
+    <p class="ranking-status">🎤 Analysing resume and JD to build interview questions...</p>
+  </div>
+
+  <div *ngIf="interviewError()" class="error-card ranking-error">❌ {{ interviewError() }}</div>
+
+  <app-interview-questions-card *ngIf="structuredInterview() as interview" [interview]="interview">
+  </app-interview-questions-card>
+
+  <app-interview-scheduler
+    *ngIf="structuredInterview() as interview"
+    [interview]="interview"
+    [analysis]="interviewAnalysis()"
+    [jdAnalysis]="interviewJdAnalysis()"
+    [resumeId]="schedulerResumeId()">
+  </app-interview-scheduler>
 
   <div *ngIf="candidateRanking() as ranking" class="ranking-card" role="region" aria-label="Candidate Ranking">
     <div class="ranking-head">

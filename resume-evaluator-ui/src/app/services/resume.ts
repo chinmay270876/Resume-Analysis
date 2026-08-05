@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Observable, throwError } from 'rxjs';
 import { catchError } from 'rxjs/operators';
-import { UploadResult, UploadProgress, ParseJdResult, RankCandidatesResult, JdAnalysis, Analysis, Evaluation } from '../models';
+import { UploadResult, UploadProgress, ParseJdResult, RankCandidatesResult, JdAnalysis, Analysis, Evaluation, GenerateInterviewResult } from '../models';
 import { environment } from '../../environments/environment';
 
 @Injectable({
@@ -96,6 +96,19 @@ export class ResumeService {
         return this.http.post<RankCandidatesResult>(
             `${this.apiBase}/api/rank-candidates`,
             { jdAnalysis, candidates }
+        ).pipe(
+            catchError(this.handleError)
+        );
+    }
+
+    generateInterview(resume: File, jobDescription: File): Observable<GenerateInterviewResult> {
+        const formData = new FormData();
+        formData.append('resume', resume);
+        formData.append('jobDescription', jobDescription);
+
+        return this.http.post<GenerateInterviewResult>(
+            `${this.apiBase}/api/generate-interview`,
+            formData
         ).pipe(
             catchError(this.handleError)
         );

@@ -1,0 +1,297 @@
+.dash-page {
+  position: relative;
+  min-height: 100vh;
+  padding: 40px 24px 64px;
+  overflow: hidden;
+  font-family: Inter, system-ui, sans-serif;
+}
+
+.background-blur {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.35;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.blur1 {
+  width: 320px;
+  height: 320px;
+  background: #06b6d4;
+  top: -80px;
+  left: -60px;
+}
+
+.blur2 {
+  width: 380px;
+  height: 380px;
+  background: #a855f7;
+  bottom: 10%;
+  right: -100px;
+}
+
+.dash-header,
+.dash-tabs,
+.dash-list,
+.dash-state,
+.dash-error {
+  position: relative;
+  z-index: 1;
+  max-width: 980px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.dash-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: flex-start;
+  margin-bottom: 28px;
+}
+
+.dash-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #67e8f9;
+  background: rgba(6, 182, 212, 0.15);
+  border: 1px solid rgba(6, 182, 212, 0.35);
+  margin-bottom: 10px;
+}
+
+.dash-header h1 {
+  margin: 0 0 8px;
+  font-size: 1.8rem;
+  background: linear-gradient(90deg, #06b6d4 0%, #a855f7 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.dash-header p {
+  margin: 0;
+  color: var(--color-text-secondary);
+}
+
+.dash-nav {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.nav-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 14px;
+  border-radius: 10px;
+  text-decoration: none;
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  background: transparent;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.nav-link.refresh:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.dash-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 22px;
+}
+
+.dash-tab {
+  border: 1px solid var(--color-border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--color-text-secondary);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.dash-tab.active {
+  color: white;
+  border-color: transparent;
+  background: linear-gradient(90deg, #06b6d4 0%, #a855f7 100%);
+}
+
+.dash-state,
+.dash-error {
+  padding: 24px;
+  border-radius: 16px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-card);
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+
+.dash-error {
+  color: var(--color-error);
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+.dash-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.dash-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 20px 22px;
+  border-radius: 18px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-card);
+  box-shadow: var(--shadow-card);
+  animation: fadeInUp 0.4s ease both;
+}
+
+.dash-card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.dash-card-title-row h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: var(--color-text);
+}
+
+.dash-email {
+  margin: 0 0 8px;
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+}
+
+.dash-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  color: var(--color-text-secondary);
+  font-size: 0.88rem;
+  margin-bottom: 6px;
+}
+
+.dash-meta .dot {
+  opacity: 0.5;
+}
+
+.dash-reminder {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+}
+
+.dash-card-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 120px;
+}
+
+.action-btn {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text);
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.action-btn.primary {
+  border: none;
+  color: white;
+  background: linear-gradient(90deg, #06b6d4 0%, #2563eb 100%);
+}
+
+.action-btn.danger {
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+}
+
+.action-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.status-pill {
+  display: inline-flex;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.status-scheduled {
+  color: #67e8f9;
+  background: rgba(6, 182, 212, 0.15);
+}
+
+.status-reminder {
+  color: #c4b5fd;
+  background: rgba(168, 85, 247, 0.15);
+}
+
+.status-progress {
+  color: #fcd34d;
+  background: rgba(245, 158, 11, 0.15);
+}
+
+.status-completed {
+  color: #86efac;
+  background: rgba(34, 197, 94, 0.15);
+}
+
+.status-cancelled,
+.status-expired {
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.15);
+}
+
+.status-draft {
+  color: var(--color-text-secondary);
+  background: rgba(148, 163, 184, 0.15);
+}
+
+@media (max-width: 720px) {
+  .dash-header {
+    flex-direction: column;
+  }
+
+  .dash-card {
+    flex-direction: column;
+  }
+
+  .dash-card-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+}

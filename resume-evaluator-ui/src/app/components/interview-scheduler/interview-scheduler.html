@@ -1,0 +1,63 @@
+<div class="sched-card" role="region" aria-label="Interview Scheduler">
+  <div class="sched-header">
+    <span class="sched-badge">Interview Scheduling</span>
+    <h2>Schedule Interview</h2>
+    <p>Auto-filled from the parsed resume. Set date, time, and timezone to send the invitation.</p>
+  </div>
+
+  <div *ngIf="createdInterview() as created" class="sched-success">
+    <p>
+      Scheduled for <strong>{{ created.candidateName }}</strong>
+      on {{ created.date }} at {{ created.time }} ({{ created.timezone }}).
+    </p>
+    <div class="sched-success-actions">
+      <a class="sched-link-btn" [routerLink]="['/interviews', created.id]">View Details</a>
+      <a class="sched-link-btn secondary" routerLink="/dashboard">Open Dashboard</a>
+    </div>
+  </div>
+
+  <form *ngIf="!createdInterview()" class="sched-form" (ngSubmit)="submit()" novalidate>
+    <div class="sched-grid">
+      <label class="sched-field">
+        <span>Candidate Name</span>
+        <input type="text" name="candidateName" [(ngModel)]="candidateName" required autocomplete="name" />
+      </label>
+
+      <label class="sched-field">
+        <span>Candidate Email</span>
+        <input type="email" name="candidateEmail" [(ngModel)]="candidateEmail" required autocomplete="email" />
+      </label>
+
+      <label class="sched-field">
+        <span>Date</span>
+        <input type="date" name="date" [(ngModel)]="date" required />
+      </label>
+
+      <label class="sched-field">
+        <span>Time</span>
+        <input type="time" name="time" [(ngModel)]="time" required />
+      </label>
+
+      <label class="sched-field">
+        <span>Timezone</span>
+        <select name="timezone" [(ngModel)]="timezone" required>
+          <option *ngFor="let tz of timezones" [value]="tz">{{ tz }}</option>
+        </select>
+      </label>
+
+      <label class="sched-field">
+        <span>Duration (minutes)</span>
+        <input type="number" name="duration" [(ngModel)]="duration" min="5" max="480" required />
+      </label>
+    </div>
+
+    <p *ngIf="error()" class="sched-error">{{ error() }}</p>
+
+    <div class="sched-actions">
+      <button class="sched-submit" type="submit" [disabled]="submitting()">
+        <span *ngIf="!submitting()">Schedule &amp; Send Invite</span>
+        <span *ngIf="submitting()">Scheduling...</span>
+      </button>
+    </div>
+  </form>
+</div>

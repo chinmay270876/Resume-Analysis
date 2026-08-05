@@ -1,14 +1,18 @@
 import { Component, inject, OnInit, PLATFORM_ID, signal } from '@angular/core';
 import { CommonModule, isPlatformBrowser } from '@angular/common';
+import { RouterLink } from '@angular/router';
+import { HttpErrorResponse } from '@angular/common/http';
 import { ResumeQueueService } from '../../services/resume-queue';
 import { ResumeService } from '../../services/resume';
-import { ResumeTask, RankedCandidate } from '../../models';
+import { Analysis, JdAnalysis, ResumeTask, RankedCandidate, StructuredInterview } from '../../models';
 import { ResumeCard } from '../../components/resume-card/resume-card';
+import { InterviewQuestionsCard } from '../../components/interview-questions-card/interview-questions-card';
+import { InterviewScheduler } from '../../components/interview-scheduler/interview-scheduler';
 
 @Component({
   selector: 'app-upload',
   standalone: true,
-  imports: [CommonModule, ResumeCard],
+  imports: [CommonModule, RouterLink, ResumeCard, InterviewQuestionsCard, InterviewScheduler],
   templateUrl: './upload.html',
   styleUrl: './upload.css',
 })
@@ -34,6 +38,12 @@ export class Upload implements OnInit {
   protected readonly showQueue = signal(false);
   protected readonly isDarkMode = signal(true);
 
+  protected readonly interviewGenerating = signal(false);
+  protected readonly interviewError = signal<string | null>(null);
+  protected readonly structuredInterview = signal<StructuredInterview | null>(null);
+  protected readonly interviewAnalysis = signal<Analysis | null>(null);
+  protected readonly interviewJdAnalysis = signal<JdAnalysis | null>(null);
+
   ngOnInit(): void {
     if (isPlatformBrowser(this.platformId)) {
       this.resetSession();
@@ -45,18 +55,12 @@ export class Upload implements OnInit {
   }
 
   /**
-   * Clears the in-memory upload queue and resets the shared Excel report so
-   * that every page refresh (F5 / Ctrl+R / browser refresh / reopen) starts
-   * from a clean session. Reuses the existing queue.reset() for in-memory
-   * state; the backend workbook is recreated header-only via the API.
+   * Clears the in-memory upload queue on page load. Does NOT wipe the shared
+   * Excel workbook — that would destroy other users'/tabs' report data.
+   * Use the reset-report API explicitly when an admin needs a clean workbook.
    */
   private resetSession(): void {
     this.queue.reset();
-    this.resumeService.resetReport().subscribe({
-      error: () => {
-        // Best-effort: a failed workbook reset must never block the UI.
-      },
-    });
   }
 
   protected toggleTheme(): void {
@@ -154,10 +158,60 @@ export class Upload implements OnInit {
     this.queue.clearCompleted();
     this.showQueue.set(false);
     this.error.set(null);
+    this.structuredInterview.set(null);
+    this.interviewAnalysis.set(null);
+    this.interviewJdAnalysis.set(null);
+    this.interviewError.set(null);
   }
 
-  protected onDownloadTranscript(task: ResumeTask): void {
-    this.queue.downloadTranscript(task);
+  protected canGenerateInterview(): boolean {
+    return !this.isProcessing()
+      && !this.interviewGenerating()
+      && this.tasks().length >= 1
+      && !!this.jdFile();
+  }
+
+  protected generateInterview(): void {
+    const resumeTask = this.tasks()[0];
+    const jd = this.jdFile();
+
+    if (!resumeTask?.file) {
+      this.interviewError.set('Resume file is required to generate an interview.');
+      return;
+    }
+    if (!jd) {
+      this.interviewError.set('Job description file is required to generate an interview.');
+      return;
+    }
+
+    this.interviewError.set(null);
+    this.structuredInterview.set(null);
+    this.interviewAnalysis.set(null);
+    this.interviewJdAnalysis.set(null);
+    this.interviewGenerating.set(true);
+
+    this.resumeService.generateInterview(resumeTask.file, jd).subscribe({
+      next: (result) => {
+        this.interviewGenerating.set(false);
+        if (result?.success && result.interview) {
+          this.structuredInterview.set(result.interview);
+          this.interviewAnalysis.set(
+            result.analysis || resumeTask.result?.analysis || null
+          );
+          this.interviewJdAnalysis.set(
+            result.jdAnalysis || this.jdAnalysis() || null
+          );
+        } else {
+          this.interviewError.set(result?.error || result?.message || 'Failed to generate interview.');
+        }
+      },
+      error: (err: HttpErrorResponse) => {
+        this.interviewGenerating.set(false);
+        const body = err?.error;
+        const message = body?.error || body?.message || err?.message || 'Failed to generate interview.';
+        this.interviewError.set(message);
+      },
+    });
   }
 
   protected onDownloadReport(task: ResumeTask): void {
@@ -183,9 +237,18 @@ export class Upload implements OnInit {
   }
 
   protected removeJobDescription(): void {
-    if (!this.isProcessing()) {
+    if (!this.isProcessing() && !this.interviewGenerating()) {
       this.queue.removeJobDescription();
+      this.structuredInterview.set(null);
+      this.interviewAnalysis.set(null);
+      this.interviewJdAnalysis.set(null);
+      this.interviewError.set(null);
     }
+  }
+
+  protected schedulerResumeId(): string | null {
+    const task = this.tasks()[0];
+    return task?.resumeId || task?.uploadId || null;
   }
 
   protected recommendationClass(recommendation: string): string {
