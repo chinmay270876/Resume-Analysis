@@ -101,10 +101,12 @@ export class ResumeService {
         );
     }
 
-    generateInterview(resume: File, jobDescription: File): Observable<GenerateInterviewResult> {
+    generateInterview(jobDescription: File, resume?: File | null): Observable<GenerateInterviewResult> {
         const formData = new FormData();
-        formData.append('resume', resume);
         formData.append('jobDescription', jobDescription);
+        if (resume) {
+            formData.append('resume', resume);
+        }
 
         return this.http.post<GenerateInterviewResult>(
             `${this.apiBase}/api/generate-interview`,

@@ -167,7 +167,6 @@ export class Upload implements OnInit {
   protected canGenerateInterview(): boolean {
     return !this.isProcessing()
       && !this.interviewGenerating()
-      && this.tasks().length >= 1
       && !!this.jdFile();
   }
 
@@ -175,10 +174,6 @@ export class Upload implements OnInit {
     const resumeTask = this.tasks()[0];
     const jd = this.jdFile();
 
-    if (!resumeTask?.file) {
-      this.interviewError.set('Resume file is required to generate an interview.');
-      return;
-    }
     if (!jd) {
       this.interviewError.set('Job description file is required to generate an interview.');
       return;
@@ -190,14 +185,14 @@ export class Upload implements OnInit {
     this.interviewJdAnalysis.set(null);
     this.interviewGenerating.set(true);
 
-    this.resumeService.generateInterview(resumeTask.file, jd).subscribe({
+    // Questions are JD-based; resume is optional metadata only (not used for question content).
+    this.resumeService.generateInterview(jd, resumeTask?.file ?? null).subscribe({
       next: (result) => {
         this.interviewGenerating.set(false);
         if (result?.success && result.interview) {
           this.structuredInterview.set(result.interview);
-          this.interviewAnalysis.set(
-            result.analysis || resumeTask.result?.analysis || null
-          );
+          // Keep analysis available for scheduling payload, but do not prefill candidate fields.
+          this.interviewAnalysis.set(result.analysis || null);
           this.interviewJdAnalysis.set(
             result.jdAnalysis || this.jdAnalysis() || null
           );

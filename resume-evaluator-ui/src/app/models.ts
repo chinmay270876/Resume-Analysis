@@ -234,7 +234,7 @@ export interface RankCandidatesResult {
 }
 
 // =============================================================================
-// Structured Interview Question Bank (Resume + JD)
+// Structured Interview Question Bank (JD-based)
 // =============================================================================
 
 export interface InterviewQuestion {

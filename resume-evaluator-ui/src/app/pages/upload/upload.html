@@ -32,7 +32,7 @@
     <div class="feature-card">
       <div class="feature-icon">🎤</div>
       <h3>Interview Generator</h3>
-      <p>Build a structured 25-minute interview from Resume + JD.</p>
+      <p>Build a structured 25-minute interview from the Job Description.</p>
     </div>
     <div class="feature-card">
       <div class="feature-icon">📊</div>
@@ -154,7 +154,7 @@
       <button class="interview-gen-btn" type="button"
         [disabled]="!canGenerateInterview()"
         (click)="generateInterview()"
-        [title]="!jdFile() ? 'Upload a Job Description to generate interview questions' : (tasks().length > 1 ? 'Uses the first selected resume + JD' : 'Generate structured interview from Resume + JD')">
+        [title]="!jdFile() ? 'Upload a Job Description to generate interview questions' : 'Generate structured interview questions from the Job Description'">
         <span *ngIf="!interviewGenerating()">🎤 Generate Interview</span>
         <span *ngIf="interviewGenerating()" class="btn-content">
           <span class="loader-sm"></span>
@@ -168,10 +168,10 @@
     </div>
 
     <p class="interview-gen-hint" *ngIf="tasks().length > 0 && !jdFile()">
-      Upload a Job Description above to enable structured interview question generation (Resume + JD).
+      Upload a Job Description above to enable structured interview question generation.
     </p>
-    <p class="interview-gen-hint" *ngIf="tasks().length > 1 && jdFile()">
-      Interview generation uses the first selected resume together with the Job Description.
+    <p class="interview-gen-hint" *ngIf="tasks().length > 0 && jdFile()">
+      Interview questions are generated from the Job Description only (not from any candidate resume).
     </p>
   </div>
 
@@ -240,7 +240,7 @@
       <span class="ranking-badge">Interview Generator</span>
       <h2>Structured Interview</h2>
     </div>
-    <p class="ranking-status">🎤 Analysing resume and JD to build interview questions...</p>
+    <p class="ranking-status">🎤 Analysing the Job Description to build interview questions...</p>
   </div>
 
   <div *ngIf="interviewError()" class="error-card ranking-error">❌ {{ interviewError() }}</div>

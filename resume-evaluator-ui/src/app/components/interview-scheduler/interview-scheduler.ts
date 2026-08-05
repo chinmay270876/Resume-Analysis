@@ -45,25 +45,20 @@ export class InterviewScheduler implements OnInit, OnChanges {
   protected duration = 25;
 
   ngOnInit(): void {
-    this.prefillFromAnalysis();
+    this.prefillDuration();
     if (!this.timezones.includes(this.timezone)) {
       this.timezones.unshift(this.timezone);
     }
   }
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (changes['analysis'] || changes['interview']) {
-      this.prefillFromAnalysis();
+    if (changes['interview']) {
+      this.prefillDuration();
     }
   }
 
-  private prefillFromAnalysis(): void {
-    const analysis = this.analysis();
-    if (analysis) {
-      this.candidateName = analysis.candidateName || this.candidateName;
-      this.candidateEmail = analysis.email || this.candidateEmail;
-    }
-
+  /** Prefill duration from the interview; leave candidate name/email blank for manual entry. */
+  private prefillDuration(): void {
     const interview = this.interview();
     if (interview?.estimatedDuration) {
       const match = String(interview.estimatedDuration).match(/(\d+)/);
