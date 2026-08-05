@@ -3,14 +3,14 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Observable, throwError } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { UploadResult, UploadProgress, ParseJdResult, RankCandidatesResult, JdAnalysis, Analysis, Evaluation, GenerateInterviewResult } from '../models';
-import { environment } from '../../environments/environment';
+import { resolveApiBase } from '../utils/api-base';
 
 @Injectable({
     providedIn: 'root'
 })
 export class ResumeService {
 
-    private apiBase = environment.apiUrl.replace(/\/api$/, '');
+    private apiBase = resolveApiBase();
 
     constructor(
         private http: HttpClient

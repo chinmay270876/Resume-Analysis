@@ -5,77 +5,465 @@
   <header class="dash-header">
     <div>
       <span class="dash-badge">Recruiter Dashboard</span>
-      <h1>Interview Management</h1>
-      <p>Track upcoming, today, completed, and cancelled interviews.</p>
+      <h1>AI Recruitment Hub</h1>
+      <p>Analyze resumes, manage interviews, download artifacts, rank and compare candidates.</p>
     </div>
     <nav class="dash-nav">
       <a routerLink="/" class="nav-link">Resume Analysis</a>
-      <button type="button" class="nav-link refresh" (click)="loadInterviews()" [disabled]="loading()">
+      <button type="button" class="nav-link refresh" (click)="refreshAll()" [disabled]="loading()">
         Refresh
       </button>
     </nav>
   </header>
 
-  <div class="dash-tabs" role="tablist">
-    <button
-      *ngFor="let tab of tabs"
-      type="button"
-      class="dash-tab"
-      role="tab"
-      [class.active]="activeTab() === tab.id"
-      [attr.aria-selected]="activeTab() === tab.id"
-      (click)="selectTab(tab.id)">
-      {{ tab.label }}
-    </button>
-  </div>
+  <!-- Overview stats -->
+  <section class="dash-summary" *ngIf="stats() as s" aria-label="Recruitment overview">
+    <div class="summary-tile">
+      <span>Total Candidates</span>
+      <strong>{{ s.total }}</strong>
+    </div>
+    <div class="summary-tile">
+      <span>Interview Scheduled</span>
+      <strong>{{ s.scheduled }}</strong>
+    </div>
+    <div class="summary-tile">
+      <span>Completed</span>
+      <strong>{{ s.completed }}</strong>
+    </div>
+    <div class="summary-tile pending">
+      <span>Pending</span>
+      <strong>{{ s.pending }}</strong>
+    </div>
+    <div class="summary-tile selected">
+      <span>Selected</span>
+      <strong>{{ s.selected }}</strong>
+    </div>
+    <div class="summary-tile rejected">
+      <span>Rejected</span>
+      <strong>{{ s.rejected }}</strong>
+    </div>
+    <div class="summary-tile">
+      <span>Avg JD Match</span>
+      <strong>{{ formatAvg(s.averageJdMatch, '%') }}</strong>
+    </div>
+    <div class="summary-tile">
+      <span>Avg Technical</span>
+      <strong>{{ formatAvg(s.averageTechnicalScore) }}</strong>
+    </div>
+    <div class="summary-tile">
+      <span>Avg Communication</span>
+      <strong>{{ formatAvg(s.averageCommunicationScore) }}</strong>
+    </div>
+    <div class="summary-tile">
+      <span>Avg Duration</span>
+      <strong>{{ formatAvg(s.averageInterviewDurationMinutes, 'm') }}</strong>
+    </div>
+  </section>
 
-  <div *ngIf="loading()" class="dash-state">Loading interviews...</div>
-  <div *ngIf="error()" class="dash-error">{{ error() }}</div>
+  <!-- Resume Analysis quick links -->
+  <section class="dash-section hub-section" aria-label="Resume Analysis">
+    <div class="section-head">
+      <h2>Resume Analysis</h2>
+      <p>Open the analysis workspace for reports, ATS scoring, and interview questions.</p>
+    </div>
+    <div class="hub-links">
+      <a routerLink="/" class="hub-link-card">
+        <strong>Resume Report</strong>
+        <span>Candidate analysis &amp; evaluation</span>
+      </a>
+      <a routerLink="/" class="hub-link-card">
+        <strong>ATS Report</strong>
+        <span>ATS score &amp; keyword gaps</span>
+      </a>
+      <a routerLink="/" class="hub-link-card">
+        <strong>Interview Questions</strong>
+        <span>JD-based interview plan</span>
+      </a>
+      <a routerLink="/" class="hub-link-card primary">
+        <strong>Schedule Interview</strong>
+        <span>Start from Resume Analysis</span>
+      </a>
+    </div>
+  </section>
 
-  <div *ngIf="!loading() && !error() && interviews().length === 0" class="dash-state">
-    No interviews in this view yet.
-  </div>
+  <!-- Candidate Ranking -->
+  <section class="dash-section ranking-section" aria-label="Candidate Ranking">
+    <div class="section-head">
+      <h2>Candidate Ranking</h2>
+      <p>Ranked by interview scores after AI evaluation completes.</p>
+    </div>
 
-  <div *ngIf="!loading() && interviews().length > 0" class="dash-list">
-    <article
-      *ngFor="let interview of interviews(); trackBy: trackById"
-      class="dash-card">
-      <div class="dash-card-main">
-        <div class="dash-card-title-row">
-          <h2>{{ interview.candidateName }}</h2>
-          <span class="status-pill" [ngClass]="statusClass(interview.status)">{{ interview.status }}</span>
+    <div *ngIf="rankingLoading()" class="dash-state compact">Loading rankings…</div>
+    <div *ngIf="!rankingLoading() && rankings().length === 0" class="dash-state compact">
+      No ranked candidates yet. Rankings appear after completed interviews with AI evaluation.
+    </div>
+
+    <div *ngIf="!rankingLoading() && rankings().length > 0" class="ranking-table-wrap">
+      <table class="ranking-table">
+        <thead>
+          <tr>
+            <th>Rank</th>
+            <th>Candidate</th>
+            <th>Role</th>
+            <th>Overall</th>
+            <th>Technical</th>
+            <th>Communication</th>
+            <th>JD Match</th>
+            <th>Result</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let row of rankings(); trackBy: trackByRank">
+            <td><span class="rank-badge">#{{ row.rank }}</span></td>
+            <td>
+              <strong>{{ row.candidateName }}</strong>
+              <div class="muted">{{ row.currentCompany || '—' }}</div>
+            </td>
+            <td>{{ row.jobRole || '—' }}</td>
+            <td>{{ row.overallScore ?? row.rankingScore ?? '—' }}</td>
+            <td>{{ row.technical ?? '—' }}</td>
+            <td>{{ row.communication ?? '—' }}</td>
+            <td>{{ row.jdMatch != null ? row.jdMatch + '%' : '—' }}</td>
+            <td>
+              <span class="result-pill" [ngClass]="resultClass(row.result)">
+                {{ resultDisplay(row.result) }}
+              </span>
+            </td>
+            <td>
+              <a class="action-btn primary" [routerLink]="['/interviews', row.interviewId]">View</a>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Compare bar -->
+  <section class="compare-bar" *ngIf="compareSelection().length > 0" aria-label="Compare candidates">
+    <span>{{ compareSelection().length }} selected for compare</span>
+    <div class="compare-bar-actions">
+      <button
+        type="button"
+        class="action-btn primary"
+        [disabled]="compareSelection().length < 2 || compareLoading()"
+        (click)="openCompare()">
+        Compare Candidates
+      </button>
+      <button type="button" class="action-btn" (click)="clearCompareSelection()">Clear</button>
+    </div>
+  </section>
+
+  <!-- Compare panel -->
+  <section class="dash-section compare-panel" *ngIf="showCompare()" aria-label="Candidate comparison">
+    <div class="section-head">
+      <h2>Compare Candidates</h2>
+      <button type="button" class="action-btn" (click)="closeCompare()">Close</button>
+    </div>
+    <div class="compare-grid" [ngStyle]="{'--compare-cols': compareRows().length}">
+      <article class="compare-card" *ngFor="let c of compareRows()">
+        <h3>{{ c.candidateName }}</h3>
+        <p class="dash-role">{{ c.jobRole || '—' }}</p>
+        <div class="card-meta-grid">
+          <div><span>JD Match</span><strong>{{ c.jdMatch != null ? c.jdMatch + '%' : '—' }}</strong></div>
+          <div><span>Technical</span><strong>{{ c.technical ?? '—' }}</strong></div>
+          <div><span>Communication</span><strong>{{ c.communication ?? '—' }}</strong></div>
+          <div><span>Problem Solving</span><strong>{{ c.problemSolving ?? '—' }}</strong></div>
+          <div><span>Behaviour</span><strong>{{ c.behaviour ?? '—' }}</strong></div>
+          <div><span>Confidence</span><strong>{{ c.confidence ?? '—' }}</strong></div>
+          <div><span>Overall</span><strong>{{ c.overallScore ?? '—' }}</strong></div>
+          <div>
+            <span>Result</span>
+            <strong [ngClass]="resultClass(c.result)">{{ resultDisplay(c.result) }}</strong>
+          </div>
         </div>
-        <p class="dash-email">{{ interview.candidateEmail }}</p>
-        <div class="dash-meta">
-          <span>{{ interview.date || '—' }}</span>
-          <span class="dot">•</span>
-          <span>{{ interview.time || '—' }} ({{ interview.timezone }})</span>
-          <span class="dot">•</span>
-          <span>{{ interview.durationMinutes }} min</span>
+        <div class="compare-lists">
+          <div>
+            <span>Strengths</span>
+            <p>{{ listPreview(c.strengths) }}</p>
+          </div>
+          <div>
+            <span>Weaknesses</span>
+            <p>{{ listPreview(c.weaknesses) }}</p>
+          </div>
+          <div>
+            <span>Recommendation</span>
+            <p>{{ c.recommendation || '—' }}</p>
+          </div>
         </div>
-        <p class="dash-reminder">
-          Reminder: {{ interview.reminderStatus?.label || 'Not Sent' }}
-        </p>
-      </div>
-      <div class="dash-card-actions">
-        <a class="action-btn primary" [routerLink]="['/interviews', interview.id]">Details</a>
-        <button
-          *ngIf="interview.status === 'Scheduled' || interview.status === 'Reminder Sent' || interview.status === 'In Progress'"
-          type="button"
-          class="action-btn"
-          [disabled]="actionId() === interview.id"
-          (click)="completeInterview(interview)">
-          Complete
+        <a class="action-btn primary" [routerLink]="['/interviews', c.interviewId]">View Details</a>
+      </article>
+    </div>
+  </section>
+
+  <!-- Interview Management -->
+  <section class="dash-section" aria-label="Interview Management">
+    <div class="section-head">
+      <h2>Interview Management</h2>
+      <p>Schedule, remind, join, track status, and download evaluation artifacts.</p>
+    </div>
+
+    <div class="dash-toolbar">
+      <label class="dash-search">
+        <span class="sr-only">Search interviews</span>
+        <input
+          type="search"
+          placeholder="Search by name, role, company, status, or result…"
+          [ngModel]="searchQuery()"
+          (ngModelChange)="onSearchInput($event)"
+          autocomplete="off" />
+      </label>
+
+      <div class="dash-sort">
+        <label>
+          <span>Sort</span>
+          <select [ngModel]="sortBy()" (ngModelChange)="onSortChange($event)">
+            <option *ngFor="let opt of sortOptions" [value]="opt.id">{{ opt.label }}</option>
+          </select>
+        </label>
+        <button type="button" class="sort-dir" (click)="toggleSortDir()" [attr.aria-label]="'Sort ' + sortDir()">
+          {{ sortDir() === 'asc' ? '↑ Asc' : '↓ Desc' }}
         </button>
-        <button
-          *ngIf="interview.status !== 'Cancelled' && interview.status !== 'Completed'"
-          type="button"
-          class="action-btn danger"
-          [disabled]="actionId() === interview.id"
-          (click)="cancelInterview(interview)">
-          Cancel
-        </button>
       </div>
-    </article>
-  </div>
+    </div>
+
+    <div class="dash-tabs" role="tablist" aria-label="Interview filters">
+      <button
+        *ngFor="let tab of filters"
+        type="button"
+        class="dash-tab"
+        role="tab"
+        [class.active]="activeFilter() === tab.id"
+        [attr.aria-selected]="activeFilter() === tab.id"
+        (click)="selectFilter(tab.id)">
+        {{ tab.label }}
+      </button>
+    </div>
+
+    <div *ngIf="loading()" class="dash-state">Loading interviews...</div>
+    <div *ngIf="error()" class="dash-error">{{ error() }}</div>
+
+    <div *ngIf="!loading() && !error() && interviews().length === 0" class="dash-state">
+      No interviews match this view yet. Schedule one from Resume Analysis after generating interview questions.
+    </div>
+
+    <div *ngIf="!loading() && interviews().length > 0" class="dash-list">
+      <article
+        *ngFor="let interview of interviews(); trackBy: trackById"
+        class="dash-card interview-card"
+        [class.compare-selected]="isSelectedForCompare(interview.id)">
+        <div class="dash-card-main">
+          <div class="dash-card-title-row">
+            <label class="compare-check" title="Select for compare">
+              <input
+                type="checkbox"
+                [checked]="isSelectedForCompare(interview.id)"
+                (change)="toggleCompare(interview.id)" />
+              <span class="sr-only">Compare {{ interview.candidateName }}</span>
+            </label>
+            <h2>{{ interview.candidateName }}</h2>
+            <span class="status-pill" [ngClass]="statusClass(interview.status)">{{ interview.status }}</span>
+            <span class="result-pill" [ngClass]="resultClass(interview.result)">
+              {{ resultDisplay(interview.result) }}
+            </span>
+          </div>
+
+          <p class="dash-role">{{ jobRole(interview) }}</p>
+          <p class="dash-company">{{ currentCompany(interview) }}</p>
+
+          <div class="card-meta-grid">
+            <div>
+              <span>Date</span>
+              <strong>{{ formatDate(interview.date) }}</strong>
+            </div>
+            <div>
+              <span>Time</span>
+              <strong>{{ formatTime(interview.time) }}</strong>
+            </div>
+            <div>
+              <span>Duration</span>
+              <strong>{{ formatDuration(interview) }}</strong>
+            </div>
+            <div>
+              <span>Interviewer</span>
+              <strong>{{ interview.interviewer || 'Voice AI Agent' }}</strong>
+            </div>
+            <div>
+              <span>Reminder</span>
+              <strong>{{ interview.reminderStatus?.label || 'Pending' }}</strong>
+            </div>
+            <div>
+              <span>Overall Score</span>
+              <strong>{{ interview.evaluation?.overallScore ?? '—' }}</strong>
+            </div>
+          </div>
+
+          <div class="card-meta-grid completed-summary" *ngIf="isPostCompletion(interview.status) && interview.evaluation">
+            <div>
+              <span>Technical</span>
+              <strong>{{ scoreOf(interview.evaluation.technicalKnowledge, interview.evaluation.technicalScore) ?? '—' }}</strong>
+            </div>
+            <div>
+              <span>Communication</span>
+              <strong>{{ scoreOf(interview.evaluation.communication, interview.evaluation.communicationScore) ?? '—' }}</strong>
+            </div>
+            <div>
+              <span>Problem Solving</span>
+              <strong>{{ scoreOf(interview.evaluation.problemSolving, interview.evaluation.problemSolvingScore) ?? '—' }}</strong>
+            </div>
+            <div>
+              <span>JD Match</span>
+              <strong>{{
+                scoreOf(interview.evaluation.jdMatch, interview.evaluation.jdMatchPercent) != null
+                  ? scoreOf(interview.evaluation.jdMatch, interview.evaluation.jdMatchPercent) + '%'
+                  : '—'
+              }}</strong>
+            </div>
+            <div>
+              <span>Recommendation</span>
+              <strong [ngClass]="resultClass(interview.result)">
+                {{ interview.evaluation.recommendation || interview.result || '—' }}
+              </strong>
+            </div>
+            <div>
+              <span>Result</span>
+              <strong [ngClass]="resultClass(interview.result)">{{ interview.result || 'Pending' }}</strong>
+            </div>
+          </div>
+
+          <div *ngIf="rescheduleId() === interview.id" class="reschedule-panel">
+            <h3>Reschedule Interview</h3>
+            <div class="reschedule-grid">
+              <label>
+                <span>Date</span>
+                <input type="date" [(ngModel)]="rescheduleDate" />
+              </label>
+              <label>
+                <span>Time</span>
+                <input type="time" [(ngModel)]="rescheduleTime" />
+              </label>
+              <label>
+                <span>Duration (min)</span>
+                <input type="number" [(ngModel)]="rescheduleDuration" min="5" max="480" />
+              </label>
+            </div>
+            <div class="reschedule-actions">
+              <button
+                type="button"
+                class="action-btn primary"
+                [disabled]="actionId() === interview.id"
+                (click)="submitReschedule(interview)">
+                Save Schedule
+              </button>
+              <button type="button" class="action-btn" (click)="closeReschedule()">Cancel</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="dash-card-actions">
+          <a class="action-btn primary" [routerLink]="['/interviews', interview.id]">View Details</a>
+          <a
+            *ngIf="canAct(interview)"
+            class="action-btn join"
+            [routerLink]="['/interviews', interview.id]"
+            [queryParams]="{ join: 1 }">
+            Join Interview
+          </a>
+          <a
+            *ngIf="hasTranscript(interview); else noTranscriptBtn"
+            class="action-btn"
+            [href]="transcriptDownloadHref(interview.id)"
+            target="_blank"
+            rel="noopener noreferrer">
+            Download Transcript
+          </a>
+          <ng-template #noTranscriptBtn>
+            <button type="button" class="action-btn" disabled>Download Transcript</button>
+          </ng-template>
+
+          <a
+            *ngIf="hasRecording(interview); else noRecordingBtn"
+            class="action-btn"
+            [href]="recordingDownloadHref(interview.id)"
+            target="_blank"
+            rel="noopener noreferrer">
+            Download Recording
+          </a>
+          <ng-template #noRecordingBtn>
+            <button type="button" class="action-btn" disabled>Download Recording</button>
+          </ng-template>
+
+          <a
+            *ngIf="hasEvaluation(interview); else noEvalBtn"
+            class="action-btn"
+            [href]="evaluationDownloadHref(interview.id)"
+            target="_blank"
+            rel="noopener noreferrer">
+            View Evaluation
+          </a>
+          <ng-template #noEvalBtn>
+            <button type="button" class="action-btn" disabled>View Evaluation</button>
+          </ng-template>
+
+          <a
+            *ngIf="hasExcel(interview)"
+            class="action-btn"
+            [href]="excelDownloadHref(interview.id)"
+            target="_blank"
+            rel="noopener noreferrer">
+            Download Excel
+          </a>
+
+          <a
+            *ngIf="hasFinalResult(interview)"
+            class="action-btn"
+            [href]="resultReportDownloadHref(interview.id)"
+            target="_blank"
+            rel="noopener noreferrer">
+            Download Report
+          </a>
+          <button
+            *ngIf="hasFinalResult(interview)"
+            type="button"
+            class="action-btn"
+            (click)="shareReport(interview)">
+            Share Report
+          </button>
+          <button
+            *ngIf="canAct(interview)"
+            type="button"
+            class="action-btn"
+            [disabled]="actionId() === interview.id"
+            (click)="openReschedule(interview)">
+            Reschedule
+          </button>
+          <button
+            *ngIf="interview.status !== 'Cancelled' && !isPostCompletion(interview.status)"
+            type="button"
+            class="action-btn danger"
+            [disabled]="actionId() === interview.id"
+            (click)="cancelInterview(interview)">
+            Cancel Interview
+          </button>
+        </div>
+      </article>
+    </div>
+
+    <nav
+      *ngIf="!loading() && totalCount() > 0"
+      class="dash-pagination"
+      aria-label="Interview pagination">
+      <button type="button" class="page-btn" [disabled]="page() <= 1" (click)="goToPage(page() - 1)">
+        Previous
+      </button>
+      <span class="page-info">Page {{ page() }} of {{ totalPages() }} · {{ totalCount() }} total</span>
+      <button
+        type="button"
+        class="page-btn"
+        [disabled]="page() >= totalPages()"
+        (click)="goToPage(page() + 1)">
+        Next
+      </button>
+    </nav>
+  </section>
 </div>

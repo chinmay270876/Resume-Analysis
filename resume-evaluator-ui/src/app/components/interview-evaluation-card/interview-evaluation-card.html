@@ -1,0 +1,141 @@
+<section class="detail-card eval-card" id="ai-evaluation">
+  <div class="eval-header">
+    <h2>AI Evaluation</h2>
+    <div class="eval-header-actions" *ngIf="evaluation">
+      <a
+        *ngIf="evaluationDownloadHref"
+        class="action-btn primary"
+        [href]="evaluationDownloadHref"
+        target="_blank"
+        rel="noopener noreferrer">
+        Download Report (PDF)
+      </a>
+    </div>
+  </div>
+
+  <ng-container *ngIf="interviewCompleted && evaluation; else waitingEval">
+    <div class="eval-top">
+      <div class="score-ring" [ngClass]="scoreClass(overallScore())">
+        <svg class="ring-svg" viewBox="0 0 120 120" aria-hidden="true">
+          <circle class="ring-bg" cx="60" cy="60" r="52" />
+          <circle
+            class="ring-progress"
+            cx="60"
+            cy="60"
+            r="52"
+            [attr.stroke-dasharray]="ringCircumference"
+            [style.strokeDashoffset]="ringOffset(overallScore())" />
+        </svg>
+        <div class="score-inner">
+          <span class="score-value">{{ overallScore() ?? '—' }}</span>
+          <span class="score-label">Overall</span>
+        </div>
+      </div>
+
+      <div class="eval-verdict">
+        <div class="verdict-row">
+          <span class="verdict-label">Recommendation</span>
+          <strong class="rec-pill" [ngClass]="recommendationClass()">
+            {{ evaluation.recommendation || '—' }}
+          </strong>
+        </div>
+        <div class="verdict-row">
+          <span class="verdict-label">Result</span>
+          <strong class="result-pill" [ngClass]="resultClass()">
+            {{ hiringResult() }}
+          </strong>
+        </div>
+        <p class="eval-summary" *ngIf="evaluation.summary">{{ evaluation.summary }}</p>
+        <p class="eval-meta" *ngIf="evaluation.evaluatedAt">
+          Evaluated from live podcast transcript · {{ evaluation.evaluatedAt | date: 'medium' }}
+        </p>
+      </div>
+    </div>
+
+    <div class="category-grid">
+      <article class="category-card" *ngFor="let row of categories(); trackBy: trackByKey">
+        <div class="category-head">
+          <div>
+            <h3>{{ row.label }}</h3>
+            <span class="weight-tag" *ngIf="row.weight">Weight {{ row.weight }}</span>
+          </div>
+          <strong class="category-score" [ngClass]="scoreClass(row.score)">
+            {{ row.score ?? '—' }}
+          </strong>
+        </div>
+        <div class="progress-bar" [attr.aria-valuenow]="row.score ?? 0" aria-valuemin="0" aria-valuemax="100">
+          <div
+            class="progress-fill"
+            [ngClass]="scoreClass(row.score)"
+            [style.width.%]="row.score ?? 0"></div>
+        </div>
+        <p class="category-reason" *ngIf="row.reason">{{ row.reason }}</p>
+      </article>
+    </div>
+
+    <div class="lists-grid">
+      <div class="list-block" *ngIf="evaluation.strengths?.length">
+        <h3>Strengths</h3>
+        <ul>
+          <li *ngFor="let item of evaluation.strengths; trackBy: trackByIndex">{{ item }}</li>
+        </ul>
+      </div>
+      <div class="list-block" *ngIf="evaluation.weaknesses?.length">
+        <h3>Weaknesses</h3>
+        <ul>
+          <li *ngFor="let item of evaluation.weaknesses; trackBy: trackByIndex">{{ item }}</li>
+        </ul>
+      </div>
+      <div class="list-block" *ngIf="evaluation.missingSkills?.length">
+        <h3>Missing Skills</h3>
+        <div class="chips">
+          <span class="chip miss" *ngFor="let item of evaluation.missingSkills; trackBy: trackByIndex">
+            {{ item }}
+          </span>
+        </div>
+      </div>
+      <div class="list-block" *ngIf="evaluation.knowledgeGaps?.length">
+        <h3>Knowledge Gaps</h3>
+        <div class="chips">
+          <span class="chip gap" *ngFor="let item of evaluation.knowledgeGaps; trackBy: trackByIndex">
+            {{ item }}
+          </span>
+        </div>
+      </div>
+      <div class="list-block" *ngIf="evaluation.redFlags?.length">
+        <h3>Red Flags</h3>
+        <ul class="flag-list">
+          <li *ngFor="let item of evaluation.redFlags; trackBy: trackByIndex">{{ item }}</li>
+        </ul>
+      </div>
+      <div class="list-block" *ngIf="evaluation.potential?.length">
+        <h3>Potential</h3>
+        <ul>
+          <li *ngFor="let item of evaluation.potential; trackBy: trackByIndex">{{ item }}</li>
+        </ul>
+      </div>
+      <div class="list-block" *ngIf="evaluation.hiringRisks?.length">
+        <h3>Hiring Risks</h3>
+        <ul class="flag-list">
+          <li *ngFor="let item of evaluation.hiringRisks; trackBy: trackByIndex">{{ item }}</li>
+        </ul>
+      </div>
+    </div>
+  </ng-container>
+
+  <ng-template #waitingEval>
+    <p class="waiting-msg">Waiting for Interview Completion</p>
+    <p class="waiting-sub">
+      AI Evaluation runs only after the Voice AI interview finishes and the real podcast transcript is available.
+      No fake interviews or fabricated scores.
+    </p>
+    <button
+      *ngIf="canRetry"
+      type="button"
+      class="action-btn primary retry-btn"
+      [disabled]="retryLoading"
+      (click)="onRetry()">
+      {{ retryLoading ? 'Generating Evaluation…' : 'Generate AI Evaluation' }}
+    </button>
+  </ng-template>
+</section>

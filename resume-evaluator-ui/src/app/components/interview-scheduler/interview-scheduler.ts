@@ -46,6 +46,7 @@ export class InterviewScheduler implements OnInit, OnChanges {
 
   ngOnInit(): void {
     this.prefillDuration();
+    this.prefillCandidate();
     if (!this.timezones.includes(this.timezone)) {
       this.timezones.unshift(this.timezone);
     }
@@ -54,6 +55,9 @@ export class InterviewScheduler implements OnInit, OnChanges {
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['interview']) {
       this.prefillDuration();
+    }
+    if (changes['analysis'] || changes['jdAnalysis']) {
+      this.prefillCandidate();
     }
   }
 
@@ -65,6 +69,17 @@ export class InterviewScheduler implements OnInit, OnChanges {
       if (match) {
         this.duration = Number(match[1]) || 25;
       }
+    }
+  }
+
+  /** Prefill candidate fields from resume analysis when available. */
+  private prefillCandidate(): void {
+    const analysis = this.analysis();
+    if (analysis?.candidateName && !this.candidateName.trim()) {
+      this.candidateName = analysis.candidateName;
+    }
+    if (analysis?.email && !this.candidateEmail.trim()) {
+      this.candidateEmail = analysis.email;
     }
   }
 
@@ -80,6 +95,9 @@ export class InterviewScheduler implements OnInit, OnChanges {
       return;
     }
 
+    const analysis = this.analysis();
+    const jd = this.jdAnalysis();
+
     const payload: CreateInterviewPayload = {
       candidateName: this.candidateName.trim(),
       candidateEmail: this.candidateEmail.trim(),
@@ -89,12 +107,15 @@ export class InterviewScheduler implements OnInit, OnChanges {
       duration: this.duration,
       status: 'Scheduled',
       resumeId: this.resumeId(),
+      jobRole: jd?.jobTitle || analysis?.role || analysis?.currentDesignation || null,
+      currentCompany: analysis?.currentCompany || null,
+      interviewer: 'Voice AI Agent',
       interview: this.interview(),
       interviewJson: this.interview(),
-      analysis: this.analysis(),
-      resumeSummary: this.analysis(),
-      jdAnalysis: this.jdAnalysis(),
-      jobDescription: this.jdAnalysis(),
+      analysis: analysis,
+      resumeSummary: analysis,
+      jdAnalysis: jd,
+      jobDescription: jd,
     };
 
     this.submitting.set(true);

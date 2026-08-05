@@ -69,6 +69,13 @@
   margin-bottom: 16px;
 }
 
+.header-pills {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .detail-badge {
   display: inline-block;
   padding: 4px 12px;
@@ -104,6 +111,11 @@
   margin-bottom: 18px;
 }
 
+.detail-actions.tight {
+  margin-bottom: 0;
+  margin-top: 12px;
+}
+
 .action-btn {
   border-radius: 10px;
   padding: 9px 14px;
@@ -113,6 +125,10 @@
   border: 1px solid var(--color-border);
   background: transparent;
   color: var(--color-text);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .action-btn.primary {
@@ -146,10 +162,55 @@
   color: var(--color-text);
 }
 
+.join-card.highlight {
+  box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.45), var(--shadow-card);
+}
+
+.join-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.join-status strong {
+  display: block;
+  font-size: 1.15rem;
+  margin-bottom: 4px;
+}
+
+.join-ready .join-status strong {
+  color: #67e8f9;
+}
+
+.join-started .join-status strong {
+  color: #86efac;
+}
+
+.join-ended .join-status strong,
+.join-unavailable .join-status strong {
+  color: var(--color-text-secondary);
+}
+
+.join-status p {
+  margin: 0;
+  color: var(--color-text-secondary);
+}
+
+.join-note {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  line-height: 1.45;
+}
+
 .detail-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
+}
+
+.detail-grid.scores {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .detail-grid > div {
@@ -181,6 +242,33 @@
   color: #67e8f9;
 }
 
+.reschedule-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.reschedule-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-text-muted);
+}
+
+.reschedule-grid input,
+.reschedule-grid select {
+  padding: 9px 11px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: rgba(0, 0, 0, 0.15);
+  color: var(--color-text);
+  font-weight: 600;
+}
+
 .reminder-flags {
   list-style: none;
   padding: 0;
@@ -205,6 +293,43 @@
   background: rgba(34, 197, 94, 0.12);
 }
 
+.waiting-msg {
+  margin: 0 0 6px;
+  font-weight: 700;
+  color: #60a5fa;
+  font-size: 1rem;
+}
+
+.waiting-sub {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.artifact-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.final-result {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+}
+
+.final-result > span {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-text-muted);
+}
+
 .detail-state,
 .detail-error {
   padding: 24px;
@@ -220,7 +345,8 @@
   border-color: rgba(239, 68, 68, 0.35);
 }
 
-.status-pill {
+.status-pill,
+.result-pill {
   display: inline-flex;
   padding: 4px 12px;
   border-radius: 999px;
@@ -261,12 +387,29 @@
   background: rgba(148, 163, 184, 0.15);
 }
 
+.result-pending {
+  color: #60a5fa;
+  background: rgba(37, 99, 235, 0.18);
+}
+
+.result-selected {
+  color: #4ade80;
+  background: rgba(34, 197, 94, 0.18);
+}
+
+.result-rejected {
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.18);
+}
+
 @media (max-width: 720px) {
   .detail-header {
     flex-direction: column;
   }
 
-  .detail-grid {
+  .detail-grid,
+  .detail-grid.scores,
+  .reschedule-grid {
     grid-template-columns: 1fr;
   }
 }

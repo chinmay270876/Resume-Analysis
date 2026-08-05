@@ -1,0 +1,87 @@
+<section class="podcast-card" id="podcast-transcript">
+  <div class="podcast-header">
+    <div>
+      <h2>Podcast Transcript</h2>
+      <p class="podcast-sub">
+        Real AI ↔ Candidate conversation from the completed live interview.
+      </p>
+    </div>
+    <div class="podcast-meta" *ngIf="available() && transcript() as t">
+      <span>{{ t.lineCount || t.lines?.length || 0 }} lines</span>
+      <span>{{ t.wordCount || 0 }} words</span>
+      <span>{{ formatDuration(t.duration) }}</span>
+    </div>
+  </div>
+
+  <ng-container *ngIf="!interviewCompleted; else completedBlock">
+    <p class="empty-msg">No transcript available yet.</p>
+    <p class="empty-sub">
+      The podcast transcript is created only after the live Voice AI interview finishes.
+    </p>
+  </ng-container>
+
+  <ng-template #completedBlock>
+    <div *ngIf="loading()" class="empty-msg">Loading transcript…</div>
+    <div *ngIf="error()" class="error-msg">{{ error() }}</div>
+
+    <ng-container *ngIf="!loading() && !error() && !available()">
+      <p class="empty-msg">No transcript available yet.</p>
+      <p class="empty-sub">
+        Waiting for the Voice AI provider to submit the live session conversation.
+      </p>
+    </ng-container>
+
+    <ng-container *ngIf="!loading() && available()">
+      <div class="podcast-toolbar no-print">
+        <label class="search-field">
+          <span class="sr-only">Search transcript</span>
+          <input
+            type="search"
+            placeholder="Search keyword, speaker, or timestamp…"
+            [ngModel]="searchQuery()"
+            (ngModelChange)="searchQuery.set($event)"
+            (keyup.enter)="onSearch()" />
+        </label>
+        <select
+          [ngModel]="speakerFilter()"
+          (ngModelChange)="speakerFilter.set($event); onSearch()"
+          aria-label="Filter by speaker">
+          <option value="">All speakers</option>
+          <option value="AI">AI</option>
+          <option value="Candidate">Candidate</option>
+        </select>
+        <button type="button" class="tool-btn" (click)="onSearch()">Search</button>
+        <button type="button" class="tool-btn" (click)="clearSearch()">Clear</button>
+        <button type="button" class="tool-btn" [disabled]="copying()" (click)="copyTranscript()">
+          Copy
+        </button>
+        <button type="button" class="tool-btn" (click)="download('txt')">Download TXT</button>
+        <button type="button" class="tool-btn" (click)="download('pdf')">Download PDF</button>
+        <button
+          type="button"
+          class="tool-btn"
+          [disabled]="!hasRecording"
+          (click)="downloadAudio()">
+          Download Audio
+        </button>
+        <button type="button" class="tool-btn" (click)="printTranscript()">Print</button>
+      </div>
+
+      <div class="conversation" *ngIf="lines().length; else noMatches">
+        <article
+          *ngFor="let line of lines()"
+          class="turn"
+          [ngClass]="speakerClass(line.speaker)">
+          <div class="turn-meta">
+            <span class="speaker">{{ line.speaker }}</span>
+            <span class="timestamp">{{ line.timestamp }}</span>
+          </div>
+          <p class="turn-text">{{ line.text }}</p>
+        </article>
+      </div>
+      <ng-template #noMatches>
+        <p class="empty-msg">No matching lines for this search.</p>
+      </ng-template>
+    </ng-container>
+  </ng-template>
+</section>

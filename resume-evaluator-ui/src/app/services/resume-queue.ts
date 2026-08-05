@@ -20,11 +20,11 @@ import {
   UploadProgressResume,
   UploadResult,
 } from '../models';
-import { environment } from '../../environments/environment';
+import { resolveApiBase, withApiKeyQuery } from '../utils/api-base';
 
 const MAX_FILES = 5;
 const MAX_SIZE_BYTES = 5 * 1024 * 1024;
-const API_BASE = environment.apiUrl.replace(/\/api$/, '');
+const API_BASE = resolveApiBase();
 /** sessionStorage key for Resume Analysis UI session (survives route recreation / soft refresh). */
 const SESSION_STORAGE_KEY = 'resume-analysis-session';
 const SESSION_VERSION = 1;
@@ -750,10 +750,10 @@ export class ResumeQueueService {
       return null;
     }
     if (/^https?:\/\//i.test(path)) {
-      return path;
+      return withApiKeyQuery(path);
     }
     const normalized = path.startsWith('/') ? path : `/${path}`;
-    return `${API_BASE}${normalized}`;
+    return withApiKeyQuery(`${API_BASE}${normalized}`);
   }
 
   private startStatusPolling(taskId: string, uploadId: string, resumeId: string): void {

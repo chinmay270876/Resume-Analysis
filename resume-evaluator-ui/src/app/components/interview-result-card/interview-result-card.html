@@ -1,0 +1,175 @@
+<section class="result-card" id="final-result" *ngIf="interview as item">
+  <div class="result-header">
+    <div>
+      <span class="result-badge">Final Result</span>
+      <h2>Hiring Decision</h2>
+      <p class="result-subtitle">
+        Derived from the completed interview, podcast transcript, and AI evaluation.
+      </p>
+    </div>
+    <span class="result-pill large" [ngClass]="resultClass(resultLabel)">
+      {{ resultLabel === 'Selected' ? '🟢 Selected' : resultLabel === 'Rejected' ? '🔴 Rejected' : 'Pending' }}
+    </span>
+  </div>
+
+  <div class="result-pending-banner" *ngIf="isPending">
+    <strong>Result Pending</strong>
+    <p>
+      A hiring decision is available only after Interview Completed → Podcast Transcript →
+      AI Evaluation. Current status:
+      <em>{{ item.status }}</em>.
+    </p>
+  </div>
+
+  <div class="result-meta-grid">
+    <div>
+      <span>Candidate</span>
+      <strong>{{ item.candidateName }}</strong>
+    </div>
+    <div>
+      <span>Applied Role</span>
+      <strong>{{ jobRole }}</strong>
+    </div>
+    <div>
+      <span>Current Company</span>
+      <strong>{{ currentCompany }}</strong>
+    </div>
+    <div>
+      <span>Interview Date</span>
+      <strong>{{ formatDate(item.date) }}</strong>
+    </div>
+    <div>
+      <span>Interview Time</span>
+      <strong>{{ formatTime(item.time) }}</strong>
+    </div>
+    <div>
+      <span>Interview Duration</span>
+      <strong>{{ formatDuration() }}</strong>
+    </div>
+    <div>
+      <span>Interview Status</span>
+      <strong>
+        <span class="status-pill" [ngClass]="statusClass(item.status)">{{ item.status }}</span>
+      </strong>
+    </div>
+    <div>
+      <span>Final Result</span>
+      <strong>
+        <span class="result-pill" [ngClass]="resultClass(resultLabel)">{{ resultLabel }}</span>
+      </strong>
+    </div>
+  </div>
+
+  <div class="score-grid" *ngIf="evaluation as eval">
+    <div class="score-tile highlight">
+      <span>Overall Interview Score</span>
+      <strong>{{ displayScore(eval.overallScore) }} <small>/ 100</small></strong>
+    </div>
+    <div class="score-tile">
+      <span>Technical</span>
+      <strong>{{ displayScore(categoryScore(eval.technicalKnowledge, eval.technicalScore)) }}</strong>
+    </div>
+    <div class="score-tile">
+      <span>Communication</span>
+      <strong>{{ displayScore(categoryScore(eval.communication, eval.communicationScore)) }}</strong>
+    </div>
+    <div class="score-tile">
+      <span>Problem Solving</span>
+      <strong>{{ displayScore(categoryScore(eval.problemSolving, eval.problemSolvingScore)) }}</strong>
+    </div>
+    <div class="score-tile">
+      <span>Confidence</span>
+      <strong>{{ displayScore(categoryScore(eval.confidence, eval.confidencePercent)) }}</strong>
+    </div>
+    <div class="score-tile">
+      <span>Behaviour</span>
+      <strong>{{ displayScore(categoryScore(eval.behaviour, eval.behaviourScore)) }}</strong>
+    </div>
+    <div class="score-tile">
+      <span>JD Match</span>
+      <strong>{{ displayScore(categoryScore(eval.jdMatch, eval.jdMatchPercent), '%') }}</strong>
+    </div>
+    <div class="score-tile">
+      <span>Recommendation</span>
+      <strong [ngClass]="resultClass(item.result)">{{ eval.recommendation || '—' }}</strong>
+    </div>
+  </div>
+
+  <div class="result-summary">
+    <h3>Result Summary</h3>
+    <p>{{ summaryText() }}</p>
+  </div>
+
+  <div class="result-actions">
+    <button type="button" class="action-btn" (click)="viewTranscript.emit()" [disabled]="!hasTranscript">
+      View Transcript
+    </button>
+    <button
+      type="button"
+      class="action-btn"
+      (click)="viewEvaluation.emit()"
+      [disabled]="!evaluation">
+      View AI Evaluation
+    </button>
+    <a
+      *ngIf="hasTranscript && transcriptDownloadHref; else noTranscriptDl"
+      class="action-btn"
+      [href]="transcriptDownloadHref"
+      target="_blank"
+      rel="noopener noreferrer">
+      Download Transcript
+    </a>
+    <ng-template #noTranscriptDl>
+      <button type="button" class="action-btn" disabled>Download Transcript</button>
+    </ng-template>
+
+    <a
+      *ngIf="hasRecording && recordingDownloadHref; else noAudioDl"
+      class="action-btn"
+      [href]="recordingDownloadHref"
+      target="_blank"
+      rel="noopener noreferrer">
+      Download Audio
+    </a>
+    <ng-template #noAudioDl>
+      <button type="button" class="action-btn" disabled>Download Audio</button>
+    </ng-template>
+
+    <a
+      *ngIf="isResultReady && resultReportDownloadHref; else noReportDl"
+      class="action-btn primary"
+      [href]="resultReportDownloadHref"
+      target="_blank"
+      rel="noopener noreferrer">
+      Download Evaluation Report
+    </a>
+    <ng-template #noReportDl>
+      <button type="button" class="action-btn primary" disabled>Download Evaluation Report</button>
+    </ng-template>
+
+    <button
+      type="button"
+      class="action-btn"
+      [disabled]="!isResultReady"
+      (click)="onShare()">
+      Share Report
+    </button>
+  </div>
+
+  <div class="result-history" *ngIf="historyEntries().length">
+    <h3>Result History</h3>
+    <ul>
+      <li *ngFor="let entry of historyEntries(); trackBy: trackByGeneratedAt">
+        <span class="history-ids">
+          Interview {{ entry.interviewId.slice(0, 8) }}…
+          · Eval {{ entry.evaluationId.slice(0, 8) }}…
+        </span>
+        <span class="result-pill" [ngClass]="resultClass(entry.result)">{{ entry.result }}</span>
+        <span class="history-when">
+          {{ entry.generatedDate || (entry.generatedAt | date: 'yyyy-MM-dd') }}
+          {{ entry.generatedTime || (entry.generatedAt | date: 'HH:mm:ss') }}
+        </span>
+      </li>
+    </ul>
+  </div>
+</section>

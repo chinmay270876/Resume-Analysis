@@ -12,12 +12,30 @@ import { StructuredInterview, InterviewSection, InterviewQuestion } from '../../
 export class InterviewQuestionsCard {
   @Input() interview: StructuredInterview | null = null;
 
+  /** sectionName -> collapsed */
+  protected collapsed: Record<string, boolean> = {};
+
   protected trackBySection(_index: number, section: InterviewSection): string {
     return section.sectionName;
   }
 
   protected trackByQuestion(_index: number, question: InterviewQuestion): number {
     return question.questionNo;
+  }
+
+  protected isCollapsed(sectionName: string): boolean {
+    return !!this.collapsed[sectionName];
+  }
+
+  protected toggleSection(sectionName: string): void {
+    this.collapsed = {
+      ...this.collapsed,
+      [sectionName]: !this.collapsed[sectionName],
+    };
+  }
+
+  protected sectionDomId(sectionName: string): string {
+    return 'iq-section-' + sectionName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
   }
 
   protected difficultyClass(difficulty: string): string {

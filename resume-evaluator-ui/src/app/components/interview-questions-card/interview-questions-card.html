@@ -7,23 +7,33 @@
       <span class="iq-dot">·</span>
       <span>{{ interview.estimatedDuration }}</span>
     </p>
+    <p class="iq-plan-note">Interview plan for the AI Interview Bot — questions only (no answers or transcript).</p>
   </div>
 
   <div class="iq-section" *ngFor="let section of interview.sections; trackBy: trackBySection">
-    <h3 class="iq-section-title">{{ section.sectionName }}</h3>
-    <p class="iq-section-count">{{ section.questions.length }} question{{ section.questions.length === 1 ? '' : 's' }}</p>
+    <button
+      type="button"
+      class="iq-section-toggle"
+      (click)="toggleSection(section.sectionName)"
+      [attr.aria-expanded]="!isCollapsed(section.sectionName)"
+      [attr.aria-controls]="sectionDomId(section.sectionName)">
+      <span class="iq-chevron" [class.iq-chevron-collapsed]="isCollapsed(section.sectionName)" aria-hidden="true">▾</span>
+      <span class="iq-section-title">{{ section.sectionName }}</span>
+      <span class="iq-section-count">{{ section.questions.length }} question{{ section.questions.length === 1 ? '' : 's' }}</span>
+    </button>
 
-    <div class="iq-question" *ngFor="let q of section.questions; trackBy: trackByQuestion">
-      <div class="iq-question-head">
-        <span class="iq-qno">Q{{ q.questionNo }}</span>
-        <span class="iq-category">{{ q.category }}</span>
-        <span [class]="'iq-difficulty ' + difficultyClass(q.difficulty)">{{ q.difficulty }}</span>
-        <span class="iq-time">{{ q.estimatedTime }}</span>
-      </div>
-      <p class="iq-question-text">{{ q.question }}</p>
-      <div class="iq-answer" *ngIf="q.expectedAnswer">
-        <h4>Expected Answer</h4>
-        <p>{{ q.expectedAnswer }}</p>
+    <div
+      class="iq-section-body"
+      [id]="sectionDomId(section.sectionName)"
+      *ngIf="!isCollapsed(section.sectionName)">
+      <div class="iq-question" *ngFor="let q of section.questions; trackBy: trackByQuestion">
+        <div class="iq-question-head">
+          <span class="iq-qno">Q{{ q.questionNo }}</span>
+          <span class="iq-category" *ngIf="q.category">{{ q.category }}</span>
+          <span *ngIf="q.difficulty" [class]="'iq-difficulty ' + difficultyClass(q.difficulty)">{{ q.difficulty }}</span>
+          <span class="iq-time" *ngIf="q.estimatedTime">{{ q.estimatedTime }}</span>
+        </div>
+        <p class="iq-question-text">{{ q.question }}</p>
       </div>
     </div>
   </div>

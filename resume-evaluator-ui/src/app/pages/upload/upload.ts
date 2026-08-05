@@ -168,7 +168,7 @@ export class Upload implements OnInit {
     this.queue.setInterviewResult(null, null, null);
     this.queue.setInterviewGenerating(true);
 
-    // Questions are JD-based; resume is optional metadata only (not used for question content).
+    // JD-primary interview plan; first uploaded resume personalizes questions + gap analysis.
     this.resumeService.generateInterview(jd, resumeTask?.file ?? null).subscribe({
       next: (result) => {
         this.queue.setInterviewGenerating(false);

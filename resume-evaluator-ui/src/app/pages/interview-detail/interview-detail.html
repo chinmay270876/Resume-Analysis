@@ -15,22 +15,27 @@
       <div>
         <span class="detail-badge">Interview Details</span>
         <h1>{{ item.candidateName }}</h1>
-        <p>{{ item.candidateEmail }}</p>
+        <p>{{ item.candidateEmail }} · {{ jobRole(item) }}</p>
       </div>
-      <span class="status-pill" [ngClass]="statusClass(item.status)">{{ item.status }}</span>
+      <div class="header-pills">
+        <span class="status-pill" [ngClass]="statusClass(item.status)">{{ item.status }}</span>
+        <span class="result-pill" [ngClass]="resultClass(item.result)">
+          {{ item.result || 'Pending' }}
+        </span>
+      </div>
     </header>
 
     <div class="detail-actions">
       <button
-        *ngIf="item.status === 'Scheduled' || item.status === 'Reminder Sent' || item.status === 'In Progress'"
+        *ngIf="canAct(item)"
         type="button"
-        class="action-btn primary"
+        class="action-btn"
         [disabled]="actionLoading()"
-        (click)="complete()">
-        Mark Completed
+        (click)="openReschedule()">
+        Reschedule
       </button>
       <button
-        *ngIf="item.status !== 'Cancelled' && item.status !== 'Completed'"
+        *ngIf="item.status !== 'Cancelled' && !isCompleted(item)"
         type="button"
         class="action-btn danger"
         [disabled]="actionLoading()"
@@ -39,6 +44,63 @@
       </button>
     </div>
 
+    <!-- Join Interview / Voice AI readiness (no fake interview) -->
+    <section
+      class="detail-card join-card"
+      [class.highlight]="highlightJoin()"
+      [ngClass]="joinStateClass(item.joinState?.state)"
+      id="join-interview">
+      <h2>Join Interview</h2>
+      <div class="join-body">
+        <div class="join-status">
+          <strong>{{ item.joinState?.label || 'Interview Ready' }}</strong>
+          <p>{{ item.joinState?.message || 'Waiting for scheduled time' }}</p>
+        </div>
+        <p class="join-note">
+          Voice AI Interview Agent integration point — the agent will join the meeting,
+          ask interview questions, listen to the candidate, and produce transcript,
+          recording, and evaluation after the session ends.
+        </p>
+      </div>
+    </section>
+
+    <!-- Reschedule panel -->
+    <section class="detail-card" *ngIf="showReschedule()">
+      <h2>Reschedule Interview</h2>
+      <div class="reschedule-grid">
+        <label>
+          <span>Date</span>
+          <input type="date" [(ngModel)]="rescheduleDate" />
+        </label>
+        <label>
+          <span>Time</span>
+          <input type="time" [(ngModel)]="rescheduleTime" />
+        </label>
+        <label>
+          <span>Timezone</span>
+          <select [(ngModel)]="rescheduleTimezone">
+            <option *ngFor="let tz of timezones" [value]="tz">{{ tz }}</option>
+          </select>
+        </label>
+        <label>
+          <span>Duration (minutes)</span>
+          <input type="number" [(ngModel)]="rescheduleDuration" min="5" max="480" />
+        </label>
+      </div>
+      <div class="detail-actions tight">
+        <button
+          type="button"
+          class="action-btn primary"
+          [disabled]="actionLoading()"
+          (click)="submitReschedule()">
+          Save Schedule
+        </button>
+        <button type="button" class="action-btn" (click)="showReschedule.set(false)">
+          Cancel
+        </button>
+      </div>
+    </section>
+
     <section class="detail-card">
       <h2>Schedule</h2>
       <div class="detail-grid">
@@ -46,6 +108,11 @@
         <div><span>Time</span><strong>{{ item.time || '—' }}</strong></div>
         <div><span>Timezone</span><strong>{{ item.timezone }}</strong></div>
         <div><span>Duration</span><strong>{{ item.durationMinutes }} minutes</strong></div>
+        <div><span>Interviewer</span><strong>{{ item.interviewer || 'Voice AI Agent' }}</strong></div>
+        <div>
+          <span>Result</span>
+          <strong [ngClass]="resultClass(item.result)">{{ item.result || 'Pending' }}</strong>
+        </div>
         <div class="full">
           <span>Meeting Link</span>
           <strong>
@@ -64,24 +131,26 @@
       <h2>Status &amp; Reminders</h2>
       <div class="detail-grid">
         <div><span>Status</span><strong>{{ item.status }}</strong></div>
-        <div><span>Reminder Status</span><strong>{{ item.reminderStatus?.label || 'Not Sent' }}</strong></div>
+        <div><span>Reminder Status</span><strong>{{ item.reminderStatus?.label || 'Pending' }}</strong></div>
         <div><span>Invitation Sent</span><strong>{{ item.invitationSent ? 'Yes' : 'No' }}</strong></div>
         <div><span>Created</span><strong>{{ item.createdAt | date: 'medium' }}</strong></div>
       </div>
       <ul class="reminder-flags">
         <li [class.done]="item.reminderStatus?.sent24h">24 hours before</li>
         <li [class.done]="item.reminderStatus?.sent1h">1 hour before</li>
+        <li [class.done]="item.reminderStatus?.sent30m">30 minutes before</li>
         <li [class.done]="item.reminderStatus?.sent10m">10 minutes before</li>
       </ul>
     </section>
 
-    <section class="detail-card" *ngIf="asAnalysis(item.resumeSummary) as analysis">
-      <h2>Candidate / Resume</h2>
-      <div class="detail-grid">
-        <div><span>Name</span><strong>{{ analysis.candidateName }}</strong></div>
-        <div><span>Email</span><strong>{{ analysis.email }}</strong></div>
+    <section class="detail-card">
+      <h2>Candidate Information</h2>
+      <div class="detail-grid" *ngIf="asAnalysis(item.resumeSummary) as analysis; else candidateFallback">
+        <div><span>Name</span><strong>{{ analysis.candidateName || item.candidateName }}</strong></div>
+        <div><span>Email</span><strong>{{ analysis.email || item.candidateEmail }}</strong></div>
         <div><span>Phone</span><strong>{{ analysis.phone || '—' }}</strong></div>
-        <div><span>Role</span><strong>{{ analysis.role || analysis.currentDesignation || '—' }}</strong></div>
+        <div><span>Current Company</span><strong>{{ analysis.currentCompany || currentCompany(item) }}</strong></div>
+        <div><span>Role</span><strong>{{ analysis.role || analysis.currentDesignation || jobRole(item) }}</strong></div>
         <div><span>Experience</span><strong>{{ analysis.yearsOfExperience || '—' }}</strong></div>
         <div><span>Location</span><strong>{{ analysis.location || '—' }}</strong></div>
         <div class="full" *ngIf="analysis.skills?.length">
@@ -89,6 +158,14 @@
           <strong>{{ analysis.skills.join(', ') }}</strong>
         </div>
       </div>
+      <ng-template #candidateFallback>
+        <div class="detail-grid">
+          <div><span>Name</span><strong>{{ item.candidateName }}</strong></div>
+          <div><span>Email</span><strong>{{ item.candidateEmail }}</strong></div>
+          <div><span>Job Role</span><strong>{{ jobRole(item) }}</strong></div>
+          <div><span>Current Company</span><strong>{{ currentCompany(item) }}</strong></div>
+        </div>
+      </ng-template>
     </section>
 
     <section class="detail-card" *ngIf="asJd(item.jobDescription) as jd">
@@ -111,5 +188,122 @@
       *ngIf="asStructuredInterview(item.interviewJson) as structured"
       [interview]="structured">
     </app-interview-questions-card>
+
+    <!-- Podcast Transcript — only from the real completed Voice AI session -->
+    <app-podcast-transcript-card
+      [interviewId]="item.id"
+      [interviewCompleted]="isCompleted(item)"
+      [hasRecording]="hasRecording(item)">
+    </app-podcast-transcript-card>
+
+    <!-- AI Evaluation — grounded in the real transcript only -->
+    <app-interview-evaluation-card
+      [evaluation]="asEvaluation(item.evaluation)"
+      [interviewResult]="item.result || null"
+      [interviewCompleted]="isCompleted(item)"
+      [evaluationDownloadHref]="asEvaluation(item.evaluation) ? evaluationDownloadHref(item.id) : null"
+      [canRetry]="canRetryEvaluation(item)"
+      [retryLoading]="evalRetryLoading()"
+      (retry)="retryEvaluation()">
+    </app-interview-evaluation-card>
+
+    <!-- Final Result Module — decision card (reads evaluation; does not invent scores) -->
+    <app-interview-result-card
+      [interview]="item"
+      [jobRole]="jobRole(item)"
+      [currentCompany]="currentCompany(item)"
+      [hasTranscript]="hasTranscript(item)"
+      [hasRecording]="hasRecording(item)"
+      [transcriptDownloadHref]="hasTranscript(item) ? transcriptDownloadHref(item.id, 'txt') : null"
+      [recordingDownloadHref]="hasRecording(item) ? recordingDownloadHref(item.id) : null"
+      [evaluationDownloadHref]="asEvaluation(item.evaluation) ? evaluationDownloadHref(item.id) : null"
+      [resultReportDownloadHref]="
+        asEvaluation(item.evaluation) && (item.result === 'Selected' || item.result === 'Rejected' || item.status === 'Result Generated')
+          ? resultReportDownloadHref(item.id)
+          : null
+      "
+      (viewTranscript)="scrollToId('podcast-transcript')"
+      (viewEvaluation)="scrollToId('ai-evaluation')"
+      (shareReport)="shareResultReport(item)">
+    </app-interview-result-card>
+
+    <!-- Artifact downloads (kept for convenience alongside Result Card actions) -->
+    <section class="detail-card" *ngIf="isCompleted(item)">
+      <h2>Downloads</h2>
+      <div class="artifact-actions">
+        <a
+          *ngIf="item.transcriptId || item.transcriptPath; else noTranscript"
+          class="action-btn primary"
+          [href]="transcriptDownloadHref(item.id, 'txt')"
+          target="_blank"
+          rel="noopener noreferrer">
+          Download Transcript (TXT)
+        </a>
+        <a
+          *ngIf="item.transcriptId || item.transcriptPath"
+          class="action-btn primary"
+          [href]="transcriptDownloadHref(item.id, 'pdf')"
+          target="_blank"
+          rel="noopener noreferrer">
+          Download Transcript
+        </a>
+        <ng-template #noTranscript>
+          <button type="button" class="action-btn" disabled>
+            Download Transcript (Pending)
+          </button>
+        </ng-template>
+
+        <a
+          *ngIf="hasRecording(item); else noRecording"
+          class="action-btn primary"
+          [href]="recordingDownloadHref(item.id)"
+          target="_blank"
+          rel="noopener noreferrer">
+          Download Recording
+        </a>
+        <ng-template #noRecording>
+          <button type="button" class="action-btn" disabled>
+            Download Recording (Pending)
+          </button>
+        </ng-template>
+
+        <a
+          *ngIf="asEvaluation(item.evaluation); else noEvalFile"
+          class="action-btn primary"
+          [href]="evaluationDownloadHref(item.id)"
+          target="_blank"
+          rel="noopener noreferrer">
+          Download Evaluation Report
+        </a>
+        <ng-template #noEvalFile>
+          <button type="button" class="action-btn" disabled>
+            Download Evaluation Report (Pending)
+          </button>
+        </ng-template>
+
+        <a
+          *ngIf="hasExcel(item); else noExcelFile"
+          class="action-btn primary"
+          [href]="excelDownloadHref(item.id)"
+          target="_blank"
+          rel="noopener noreferrer">
+          Download Excel Summary
+        </a>
+        <ng-template #noExcelFile>
+          <button type="button" class="action-btn" disabled>
+            Download Excel Summary (Pending)
+          </button>
+        </ng-template>
+
+        <a
+          *ngIf="item.status === 'Result Generated' || item.result === 'Selected' || item.result === 'Rejected'"
+          class="action-btn primary"
+          [href]="resultReportDownloadHref(item.id)"
+          target="_blank"
+          rel="noopener noreferrer">
+          Download Final Result Report
+        </a>
+      </div>
+    </section>
   </ng-container>
 </div>

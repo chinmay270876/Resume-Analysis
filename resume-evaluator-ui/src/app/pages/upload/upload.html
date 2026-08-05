@@ -8,7 +8,7 @@
     <span class="theme-label">{{ isDarkMode() ? 'Light Mode' : 'Dark Mode' }}</span>
   </button>
 
-  <a routerLink="/dashboard" class="dashboard-nav-link">Interview Dashboard</a>
+  <a routerLink="/dashboard" class="dashboard-nav-link">Interview Management</a>
 
   <div class="background-blur blur1"></div>
   <div class="background-blur blur2"></div>
@@ -155,7 +155,7 @@
       <button class="interview-gen-btn" type="button"
         [disabled]="!canGenerateInterview()"
         (click)="generateInterview()"
-        [title]="!jdFile() ? 'Upload a Job Description to generate interview questions' : 'Generate structured interview questions from the Job Description'">
+        [title]="!jdFile() ? 'Upload a Job Description to generate interview questions' : 'Generate AI interview questions from the Job Description, personalized with the uploaded resume'">
         <span *ngIf="!interviewGenerating()">🎤 Generate Interview</span>
         <span *ngIf="interviewGenerating()" class="btn-content">
           <span class="loader-sm"></span>
@@ -175,10 +175,10 @@
     </div>
 
     <p class="interview-gen-hint" *ngIf="tasks().length > 0 && !hasJobDescription()">
-      Upload a Job Description above to enable structured interview question generation.
+      Upload a Job Description above to enable interview question generation for the AI Interview Bot.
     </p>
     <p class="interview-gen-hint" *ngIf="tasks().length > 0 && hasJobDescription()">
-      Interview questions are generated from the Job Description only (not from any candidate resume).
+      Interview questions are generated primarily from the Job Description, then personalized using the uploaded resume (including skill-gap probes).
     </p>
   </div>
 
@@ -247,7 +247,7 @@
       <span class="ranking-badge">Interview Generator</span>
       <h2>Structured Interview</h2>
     </div>
-    <p class="ranking-status">🎤 Analysing the Job Description to build interview questions...</p>
+    <p class="ranking-status">🎤 Building interview questions from the Job Description and resume...</p>
   </div>
 
   <div *ngIf="interviewError()" class="error-card ranking-error">❌ {{ interviewError() }}</div>

@@ -54,8 +54,15 @@
   opacity: 0.5;
 }
 
+.iq-plan-note {
+  margin-top: 10px;
+  font-size: 0.82rem;
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+}
+
 .iq-section {
-  margin-bottom: 28px;
+  margin-bottom: 16px;
   padding-top: 8px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
@@ -65,17 +72,56 @@
   padding-top: 0;
 }
 
+.iq-section-toggle {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 4px;
+  margin: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+
+.iq-section-toggle:hover .iq-section-title {
+  color: #67e8f9;
+}
+
+.iq-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  color: var(--color-text-secondary);
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+.iq-chevron-collapsed {
+  transform: rotate(-90deg);
+}
+
 .iq-section-title {
   font-size: 1.1rem;
   font-weight: 700;
   color: var(--color-text);
-  margin-bottom: 4px;
+  flex: 1 1 auto;
+  transition: color 0.2s ease;
 }
 
 .iq-section-count {
   font-size: 0.8rem;
   color: var(--color-text-secondary);
-  margin-bottom: 16px;
+}
+
+.iq-section-body {
+  margin-top: 8px;
+  margin-bottom: 8px;
 }
 
 .iq-question {
@@ -142,27 +188,7 @@
   font-size: 0.95rem;
   line-height: 1.55;
   color: var(--color-text);
-  margin-bottom: 12px;
-}
-
-.iq-answer {
-  padding-top: 10px;
-  border-top: 1px dashed rgba(255, 255, 255, 0.1);
-}
-
-.iq-answer h4 {
-  font-size: 0.75rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--color-text-secondary);
-  margin-bottom: 6px;
-}
-
-.iq-answer p {
-  font-size: 0.88rem;
-  line-height: 1.55;
-  color: var(--color-text-secondary);
+  margin: 0;
 }
 
 body.light-mode .iq-question {
@@ -172,10 +198,6 @@ body.light-mode .iq-question {
 
 body.light-mode .iq-section {
   border-top-color: rgba(15, 23, 42, 0.08);
-}
-
-body.light-mode .iq-answer {
-  border-top-color: rgba(15, 23, 42, 0.1);
 }
 
 @keyframes fadeInUp {

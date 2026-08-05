@@ -235,7 +235,7 @@ export interface RankCandidatesResult {
 }
 
 // =============================================================================
-// Structured Interview Question Bank (JD-based)
+// Structured Interview Question Bank (JD-primary interview plan for AI Interview Bot)
 // =============================================================================
 
 export interface InterviewQuestion {
@@ -244,7 +244,8 @@ export interface InterviewQuestion {
   difficulty: 'Easy' | 'Medium' | 'Hard' | string;
   estimatedTime: string;
   question: string;
-  expectedAnswer: string;
+  /** @deprecated Questions-only interview plan — answers are not generated. */
+  expectedAnswer?: string;
 }
 
 export interface InterviewSection {
@@ -270,7 +271,7 @@ export interface GenerateInterviewResult {
 }
 
 // =============================================================================
-// Interview Scheduling (Phase 2)
+// Interview Scheduling (Phase 2) + Interview Management
 // =============================================================================
 
 export type InterviewStatus =
@@ -279,17 +280,253 @@ export type InterviewStatus =
   | 'Reminder Sent'
   | 'In Progress'
   | 'Completed'
+  | 'Transcript Generated'
+  | 'Evaluation Generated'
+  | 'Result Generated'
   | 'Cancelled'
   | 'Expired';
 
-export type InterviewListFilter = 'upcoming' | 'today' | 'completed' | 'cancelled';
+/** Final hiring outcome — independent of lifecycle status. */
+export type InterviewResult = 'Pending' | 'Selected' | 'Rejected';
+
+/** Speakers allowed on the live podcast transcript (Voice AI session). */
+export type PodcastTranscriptSpeaker = 'AI' | 'Candidate';
+
+export type InterviewListFilter =
+  | 'all'
+  | 'upcoming'
+  | 'today'
+  | 'scheduled'
+  | 'reminder sent'
+  | 'in progress'
+  | 'completed'
+  | 'cancelled'
+  | 'selected'
+  | 'rejected'
+  | 'pending'
+  | 'pending evaluation'
+  | 'expired';
+
+export type InterviewSortBy =
+  | 'date'
+  | 'name'
+  | 'result'
+  | 'status'
+  | 'score'
+  | 'jdMatch'
+  | 'technical';
+export type InterviewSortDir = 'asc' | 'desc';
+
+export type InterviewJoinState = 'ready' | 'started' | 'ended' | 'unavailable';
+
+export interface InterviewJoinInfo {
+  state: InterviewJoinState;
+  label: string;
+  message: string;
+}
 
 export interface InterviewReminderStatus {
   label: string;
+  detail?: string;
   sent24h: boolean;
   sent1h: boolean;
+  sent30m?: boolean;
   sent10m: boolean;
   sent: string[];
+}
+
+/** Reserved for Voice AI evaluation — null until live interview completes. */
+export interface ScoreWithReason {
+  score: number | null;
+  reason?: string;
+}
+
+export type HiringRecommendation =
+  | 'Strongly Recommended'
+  | 'Recommended'
+  | 'Recommended with Training'
+  | 'Borderline'
+  | 'Rejected'
+  | string;
+
+export interface InterviewEvaluation {
+  /** Nested evidence-based scorecard (preferred). */
+  technicalKnowledge?: ScoreWithReason | null;
+  communication?: ScoreWithReason | null;
+  problemSolving?: ScoreWithReason | number | null;
+  confidence?: ScoreWithReason | null;
+  behaviour?: ScoreWithReason | null;
+  jdMatch?: ScoreWithReason | null;
+
+  /** Flat aliases for legacy / dashboard consumers. */
+  technicalScore?: number | null;
+  communicationScore?: number | null;
+  behaviourScore?: number | null;
+  problemSolvingScore?: number | null;
+  leadership?: number | null;
+  jdMatchPercent?: number | null;
+  confidencePercent?: number | null;
+  overallScore?: number | null;
+
+  recommendation?: HiringRecommendation | null;
+  result?: InterviewResult | string | null;
+  summary?: string | null;
+  strengths?: string[];
+  weaknesses?: string[];
+  missingSkills?: string[];
+  knowledgeGaps?: string[];
+  redFlags?: string[];
+  potential?: string[];
+  hiringRisks?: string[];
+  weights?: Record<string, number>;
+  selectedThreshold?: number;
+  source?: string | null;
+  evaluatedAt?: string | null;
+}
+
+/** One line from the real AI ↔ Candidate conversation. */
+export interface PodcastTranscriptLine {
+  timestamp: string;
+  speaker: PodcastTranscriptSpeaker | string;
+  text: string;
+}
+
+/** Stored podcast transcript metadata + lines (post-completion only). */
+export interface PodcastTranscript {
+  transcriptId: string;
+  interviewId: string;
+  candidateId: string;
+  lines: PodcastTranscriptLine[];
+  createdAt: string;
+  duration: number;
+  wordCount: number;
+  audioFilePath?: string | null;
+  transcriptFilePath?: string | null;
+  evaluationStatus?: string | null;
+  provider?: string | null;
+  lineCount?: number;
+}
+
+export interface TranscriptMeta {
+  transcriptId?: string;
+  createdAt?: string;
+  duration?: number;
+  wordCount?: number;
+  evaluationStatus?: string;
+  lineCount?: number;
+  evaluationError?: string;
+}
+
+/** Immutable hiring-result history entry (never overwrites prior results). */
+export interface InterviewResultHistoryEntry {
+  interviewId: string;
+  evaluationId: string;
+  result: InterviewResult | string;
+  overallScore?: number | null;
+  jdMatchPercent?: number | null;
+  recommendation?: string | null;
+  generatedAt: string;
+  generatedDate?: string;
+  generatedTime?: string;
+}
+
+/** Dashboard summary counters for Interview Management. */
+export interface InterviewStats {
+  total: number;
+  scheduled: number;
+  completed: number;
+  selected: number;
+  rejected: number;
+  pending: number;
+  pendingEvaluation: number;
+  cancelled?: number;
+  inProgress?: number;
+  reminderSent?: number;
+  averageJdMatch?: number | null;
+  averageTechnicalScore?: number | null;
+  averageCommunicationScore?: number | null;
+  averageInterviewDurationMinutes?: number | null;
+}
+
+/** Downloadable artifact pointers for a completed + evaluated interview. */
+export interface InterviewDownloadableFiles {
+  interviewId: string;
+  transcriptFile?: string | null;
+  recordingFile?: string | null;
+  evaluationPdf?: string | null;
+  excelSummary?: string | null;
+  creationDate?: string | null;
+  createdBy?: string | null;
+  generatedTimestamp?: string | null;
+}
+
+/** Ranked candidate row from completed AI evaluations. */
+export interface InterviewRankedCandidate {
+  rank: number;
+  interviewId: string;
+  candidateId?: string;
+  candidateName: string;
+  jobRole?: string | null;
+  currentCompany?: string | null;
+  interviewDate?: string | null;
+  technical?: number | null;
+  communication?: number | null;
+  problemSolving?: number | null;
+  behaviour?: number | null;
+  confidence?: number | null;
+  jdMatch?: number | null;
+  overallScore?: number | null;
+  rankingScore?: number | null;
+  recommendation?: string | null;
+  result?: InterviewResult | string;
+  strengths?: string[];
+  weaknesses?: string[];
+  resumeSummary?: Analysis | Record<string, unknown> | null;
+}
+
+export interface InterviewRankingResult {
+  success: boolean;
+  count?: number;
+  rankings?: InterviewRankedCandidate[];
+  message?: string;
+  error?: string;
+}
+
+/** Side-by-side compare row. */
+export interface InterviewCompareCandidate {
+  interviewId: string;
+  candidateName: string;
+  jobRole?: string | null;
+  currentCompany?: string | null;
+  resume?: Analysis | Record<string, unknown> | null;
+  jdMatch?: number | null;
+  technical?: number | null;
+  communication?: number | null;
+  problemSolving?: number | null;
+  behaviour?: number | null;
+  confidence?: number | null;
+  overallScore?: number | null;
+  strengths?: string[];
+  weaknesses?: string[];
+  recommendation?: string | null;
+  result?: InterviewResult | string;
+  interviewDate?: string | null;
+  status?: string;
+}
+
+export interface InterviewCompareResult {
+  success: boolean;
+  count?: number;
+  candidates?: InterviewCompareCandidate[];
+  message?: string;
+  error?: string;
+}
+
+export interface InterviewStatsResult {
+  success: boolean;
+  stats?: InterviewStats;
+  message?: string;
+  error?: string;
 }
 
 export interface ScheduledInterview {
@@ -299,6 +536,9 @@ export interface ScheduledInterview {
   jdId: string | null;
   candidateName: string;
   candidateEmail: string;
+  jobRole?: string | null;
+  currentCompany?: string | null;
+  interviewer?: string | null;
   resumeSummary: Analysis | Record<string, unknown> | null;
   jobDescription: JdAnalysis | Record<string, unknown> | null;
   interviewJson: StructuredInterview | Record<string, unknown> | null;
@@ -309,16 +549,71 @@ export interface ScheduledInterview {
   scheduledAt: string | null;
   meetingLink: string;
   status: InterviewStatus | string;
+  result?: InterviewResult | string;
+  transcriptId?: string | null;
+  transcriptPath?: string | null;
+  recordingPath?: string | null;
+  evaluationPath?: string | null;
+  evaluation?: InterviewEvaluation | null;
+  evaluationId?: string | null;
+  resultGeneratedAt?: string | null;
+  resultHistory?: InterviewResultHistoryEntry[];
+  transcriptMeta?: TranscriptMeta | null;
+  excelSummaryPath?: string | null;
+  excelSummaryFilename?: string | null;
+  excelSummaryUrl?: string | null;
+  downloadableFiles?: InterviewDownloadableFiles | null;
+  joinState?: InterviewJoinInfo;
+  artifactsAvailable?: boolean;
+  isCompleted?: boolean;
   reminders?: {
     sent24h?: boolean;
     sent1h?: boolean;
+    sent30m?: boolean;
     sent10m?: boolean;
   };
+  reminderTimestamps?: Record<string, string | null>;
+  reminderTimestamp?: string | null;
+  reminderSent?: boolean;
+  interviewDate?: string | null;
+  interviewTime?: string | null;
+  scheduledTimestamp?: string | null;
   reminderStatus?: InterviewReminderStatus;
   invitationSent?: boolean;
   invitationSentAt?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface PodcastTranscriptResult {
+  success: boolean;
+  available?: boolean;
+  message?: string;
+  interviewId?: string;
+  candidateId?: string;
+  status?: string;
+  transcript?: PodcastTranscript | null;
+  totalLines?: number;
+  matchedLines?: number;
+  error?: string;
+}
+
+export interface CompleteInterviewPayload {
+  lines: PodcastTranscriptLine[];
+  audioFilePath?: string | null;
+  durationSeconds?: number | null;
+  provider?: string | null;
+  skipEvaluation?: boolean;
+}
+
+export interface CompleteInterviewResult {
+  success: boolean;
+  message?: string;
+  interview?: ScheduledInterview;
+  transcript?: PodcastTranscript | null;
+  evaluation?: InterviewEvaluation | null;
+  result?: InterviewResult | string;
+  error?: string;
 }
 
 export interface CreateInterviewPayload {
@@ -335,17 +630,28 @@ export interface CreateInterviewPayload {
   jdId?: string | null;
   candidateId?: string;
   meetingLink?: string;
+  jobRole?: string | null;
+  currentCompany?: string | null;
+  interviewer?: string | null;
   interview?: StructuredInterview | null;
   interviewJson?: StructuredInterview | null;
   analysis?: Analysis | null;
   resumeSummary?: Analysis | null;
   jdAnalysis?: JdAnalysis | null;
   jobDescription?: JdAnalysis | null;
+  result?: InterviewResult | string;
+  transcriptPath?: string | null;
+  recordingPath?: string | null;
+  evaluationPath?: string | null;
+  evaluation?: InterviewEvaluation | null;
 }
 
 export interface InterviewListResult {
   success: boolean;
   count?: number;
+  page?: number;
+  pageSize?: number;
+  totalPages?: number;
   interviews?: ScheduledInterview[];
   message?: string;
   error?: string;
