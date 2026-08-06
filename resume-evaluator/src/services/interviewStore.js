@@ -96,7 +96,10 @@ async function writeStore(store) {
         null,
         2
     );
-    await fsp.writeFile(STORE_FILEPATH, payload, "utf8");
+    // Atomic write: temp file + rename to avoid corrupt/empty JSON on crash.
+    const tmpPath = `${STORE_FILEPATH}.${process.pid}.${Date.now()}.tmp`;
+    await fsp.writeFile(tmpPath, payload, "utf8");
+    await fsp.rename(tmpPath, STORE_FILEPATH);
 }
 
 function withMutex(fn) {

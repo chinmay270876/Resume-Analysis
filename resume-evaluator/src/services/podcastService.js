@@ -74,10 +74,8 @@ async function generatePodcast(transcriptTurns, uniqueSuffix = "") {
         }
 
         if (audioBuffers.length === 0) {
-            console.warn("⚠️ Audio generation failed for all chunks. Returning fallback URL.");
-            const suffix = uniqueSuffix ? `_${uniqueSuffix}` : "";
-            const outputDirName = process.env.OUTPUT_DIR || "output";
-            return `/${outputDirName}/podcast${suffix}.mp3`;
+            console.warn("⚠️ Audio generation failed for all chunks. No podcast file created.");
+            return null;
         }
 
         console.log("🎵 Combining audio segments...");

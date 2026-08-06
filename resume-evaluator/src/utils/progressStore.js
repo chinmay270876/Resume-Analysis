@@ -16,7 +16,7 @@ const STATUS_PERCENTAGE = {
     "Failed": 0
 };
 
-setInterval(() => {
+let cleanupInterval = setInterval(() => {
     const now = Date.now();
     for (const [uploadId, upload] of uploads.entries()) {
         if (now - upload.startTime > UPLOAD_TTL) {
@@ -24,6 +24,13 @@ setInterval(() => {
         }
     }
 }, 5 * 60 * 1000);
+
+function stopCleanup() {
+    if (cleanupInterval) {
+        clearInterval(cleanupInterval);
+        cleanupInterval = null;
+    }
+}
 
 function createUpload(uploadId, totalResumes, startTime) {
     const upload = {
@@ -115,5 +122,6 @@ module.exports = {
     updateResumeStatus,
     getUploadProgress,
     cleanupUpload,
+    stopCleanup,
     STATUS_PERCENTAGE
 };

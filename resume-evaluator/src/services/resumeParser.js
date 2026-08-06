@@ -181,9 +181,11 @@ async function extractPdfText(filePath) {
 
         if (!extractedText || extractedText.trim().length === 0) {
             console.warn("Resume parsing resulted in empty text.");
-        } else {
+        } else if (process.env.NODE_ENV !== "production" && !process.env.RENDER) {
             console.log(`✅ Resume Text Extracted. Length: ${extractedText.length}`);
             console.log(`   Preview: ${extractedText.substring(0, 1000)}...`);
+        } else {
+            console.log(`✅ Resume text extracted (${extractedText.length} chars)`);
         }
 
         return extractedText;

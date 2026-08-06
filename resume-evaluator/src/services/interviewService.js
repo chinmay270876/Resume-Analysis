@@ -69,6 +69,7 @@ function buildMeetingLink(interviewId) {
     const base =
         process.env.FRONTEND_URL ||
         process.env.CORS_ORIGINS?.split(",")[0]?.trim() ||
+        (process.env.RENDER ? "https://resume-analysis-b7p7.onrender.com" : null) ||
         "http://localhost:4200";
     return `${base.replace(/\/$/, "")}/interviews/${interviewId}`;
 }

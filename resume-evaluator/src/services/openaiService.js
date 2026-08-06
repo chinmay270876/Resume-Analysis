@@ -62,8 +62,7 @@ function shouldFallbackToHf(error) {
         status === 429 ||
         status >= 500 ||
         code === "insufficient_quota" ||
-        code === "rate_limit_exceeded" ||
-        (!status && !code)
+        code === "rate_limit_exceeded"
     );
 }
 
@@ -117,7 +116,7 @@ async function getAiResponse(prompt, userContent, model, temperature, responseFo
                 }
 
                 const hfResponse = await hf.chat.completions.create({
-                    model: process.env.HF_MODEL || "gpt-4o-mini",
+                    model: process.env.HF_MODEL || "mistralai/Mistral-Nemo-Instruct-2407",
                     temperature: temperature,
                     response_format: hfResponseFormat,
                     messages: [

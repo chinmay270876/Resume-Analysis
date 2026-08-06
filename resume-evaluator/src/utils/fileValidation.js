@@ -12,7 +12,7 @@ async function assertValidResumeFile(file) {
         throw err;
     }
 
-    const ext = path.extname(file.originalname || file.filename || "").toLowerCase();
+    const ext = path.extname(file.filename || file.originalname || "").toLowerCase();
     const handle = await fs.open(file.path, "r");
     try {
         const buf = Buffer.alloc(8);

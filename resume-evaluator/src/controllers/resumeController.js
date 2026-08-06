@@ -394,8 +394,13 @@ async function processResumeFile(file, resumeId, uploadId, onStatusUpdate, batch
 
             update("Generating Podcast");
             const podcastPath = await generatePodcast(interviewTranscript, resumeId);
-            trackFile(podcastPath);
-            responsePayload.podcastPath = podcastPath;
+            if (podcastPath) {
+                trackFile(podcastPath);
+                responsePayload.podcastPath = podcastPath;
+            } else {
+                responsePayload.podcastPath = null;
+                console.warn(`[Podcast] No audio produced for resume ${resumeId}`);
+            }
 
             const podcastSeconds = Math.round((Date.now() - t0) / 100) / 100;
             logVerbose(`Podcast (background): ${podcastSeconds}s`);

@@ -37,15 +37,18 @@ if (!process.env.OPENAI_API_KEY) {
 
 if (process.env.NODE_ENV === "production" && !process.env.API_KEY) {
     console.error(
-        "\x1b[31m%s\x1b[0m",
-        "CRITICAL ERROR: API_KEY is required in production. Without it, all /api routes are publicly accessible."
+        "\x1b[33m%s\x1b[0m",
+        "WARNING: API_KEY is not set in production. /api routes are publicly accessible. Set API_KEY and configure the frontend apiKey / __env.API_KEY to protect the API."
     );
-    process.exit(1);
 }
 
 // ================================
 // CORS
 // ================================
+
+const isRender = !!process.env.RENDER;
+const hideErrorDetails =
+    process.env.NODE_ENV === "production" || isRender;
 
 const defaultOrigins = [
     "http://localhost:4200",
@@ -55,8 +58,6 @@ const defaultOrigins = [
 
     "https://resume-analysis-d9mf.onrender.com",
     "https://resume-analysis-b7p7.onrender.com",
-
-    "https://resume-analysis-api-so26.onrender.com",
 ];
 
 // Merge env origins with defaults. Previously CORS_ORIGINS *replaced*
@@ -223,6 +224,15 @@ app.get("/", (req, res) => {
     });
 });
 
+app.get("/api/health", (req, res) => {
+    res.status(200).json({
+        success: true,
+        message: "Resume Evaluator API Running",
+        service: "resume-evaluator",
+        runtime: "node",
+    });
+});
+
 // ================================
 // Routes
 // ================================
@@ -233,6 +243,7 @@ const interviewRoutes =
     require("./src/routes/interviewRoutes");
 
 // Opt-in: when API_KEY is set, all /api routes require it. Response shapes unchanged.
+// GET /api/health is registered above and remains public for uptime checks.
 app.use("/api", apiKeyAuth);
 app.use("/api", resumeRoutes);
 app.use("/api/interviews", interviewRoutes);
@@ -254,15 +265,27 @@ app.use((req, res) => {
 
 app.use((err, req, res, next) => {
     console.error(err);
-    console.error(err.stack);
+    if (err?.stack) {
+        console.error(err.stack);
+    }
 
-    const isProduction = process.env.NODE_ENV === "production";
+    const status = err.status || 500;
+    // Keep intentional 4xx messages (validation / not found) even in production.
+    const clientSafe =
+        status >= 400 &&
+        status < 500 &&
+        typeof err.message === "string" &&
+        err.message.trim().length > 0;
 
-    res.status(err.status || 500).json({
+    res.status(status).json({
         success: false,
-        error: isProduction ? "Something went wrong" : err.message,
+        error: clientSafe
+            ? err.message
+            : hideErrorDetails
+                ? "Something went wrong"
+                : err.message,
         stage: err.stage || "Unknown",
-        stack: isProduction ? undefined : err.stack,
+        stack: hideErrorDetails ? undefined : err.stack,
     });
 });
 
@@ -278,12 +301,19 @@ const {
     warnIfEmailEnvMissing,
     ensureTransporterVerified,
 } = require("./src/services/emailService");
+const progressStore = require("./src/utils/progressStore");
 
 const server = app.listen(PORT, () => {
     console.log(`🚀 Server Running on port ${PORT}`);
 
     if (process.env.RENDER_EXTERNAL_URL) {
         console.log(`📌 API URL: ${process.env.RENDER_EXTERNAL_URL}`);
+        console.warn(
+            "⚠️  Render ephemeral disk: interviews/results/uploads reset on redeploy unless a persistent disk is attached."
+        );
+        console.warn(
+            "⚠️  Free-tier spin-down pauses the in-process reminder scheduler. Use a paid instance or Cron → POST /api/interviews/reminders/process."
+        );
     } else {
         console.log(`📌 API URL: http://localhost:${PORT}`);
     }
@@ -302,6 +332,9 @@ function gracefulShutdown(signal) {
     if (rateLimitInterval) {
         clearInterval(rateLimitInterval);
     }
+    if (typeof progressStore.stopCleanup === "function") {
+        progressStore.stopCleanup();
+    }
     stopReminderScheduler();
     server.close(() => {
         console.log("Server closed.");
@@ -316,3 +349,12 @@ function gracefulShutdown(signal) {
 
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+
+process.on("unhandledRejection", (reason) => {
+    console.error("[unhandledRejection]", reason);
+});
+
+process.on("uncaughtException", (err) => {
+    console.error("[uncaughtException]", err);
+    gracefulShutdown("uncaughtException");
+});
