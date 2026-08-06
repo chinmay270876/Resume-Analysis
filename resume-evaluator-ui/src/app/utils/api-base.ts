@@ -6,16 +6,22 @@ declare global {
   }
 }
 
+const LOCAL_HOST_RE = /^(https?:\/\/)?(localhost|127\.0\.0\.1)(:\d+)?/i;
+
 /**
- * Resolve API host for HttpClient and media/download URLs.
- * Prefer runtime window.__env.API_URL (SSR/deploy injection) over compile-time env.
+ * Single resolver for all API / download URLs.
+ * Order: runtime window.__env.API_URL (SSR injection) → environment.apiUrl.
+ * Production builds never accept a localhost runtime override.
  */
 export function resolveApiBase(): string {
   let fromRuntime = '';
   if (typeof window !== 'undefined' && window.__env?.API_URL) {
     const raw = String(window.__env.API_URL).trim();
     if (raw && raw !== '__API_URL__') {
-      fromRuntime = raw;
+      const isLocal = LOCAL_HOST_RE.test(raw);
+      if (!(environment.production && isLocal)) {
+        fromRuntime = raw;
+      }
     }
   }
 

@@ -1,7 +1,8 @@
 export const environment = {
     production: true,
-    // Prefer runtime window.__env.API_URL (injected at serve time). This is the fallback.
-    apiUrl: 'https://resume-analysis-api-so26.onrender.com/api',
+    // Compile-time default for production builds. Runtime window.__env.API_URL
+    // (SSR injection) can override; never use localhost here.
+    apiUrl: 'https://resume-analysis-api.onrender.com/api',
     /**
      * Must match backend API_KEY in production.
      * Prefer injecting via build-time replacement — never commit a real key.

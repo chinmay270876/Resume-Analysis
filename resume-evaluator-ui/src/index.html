@@ -11,13 +11,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
   <script>
+    // Placeholder replaced at SSR serve time via server.ts (API_URL env).
+    // If left as __API_URL__, resolveApiBase() falls back to environment.apiUrl
+    // (production build → https://resume-analysis-api.onrender.com).
     window.__env = window.__env || {};
     window.__env.API_URL = '__API_URL__';
-  </script>
-  <script>
-    if (window.__env.API_URL === '__API_URL__') {
-      window.__env.API_URL = 'http://localhost:3000';
-    }
   </script>
 </head>
 

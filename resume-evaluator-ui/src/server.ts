@@ -8,7 +8,7 @@ import express from 'express';
 import { join } from 'node:path';
 
 const browserDistFolder = join(import.meta.dirname, '../browser');
-const API_URL = process.env['API_URL'] || 'https://resume-analysis-api-so26.onrender.com';
+const API_URL = process.env['API_URL'] || 'https://resume-analysis-api.onrender.com';
 
 const app = express();
 const angularApp = new AngularNodeAppEngine();
