@@ -4,6 +4,7 @@ import { Observable, throwError } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { UploadResult, UploadProgress, ParseJdResult, RankCandidatesResult, JdAnalysis, Analysis, Evaluation, GenerateInterviewResult } from '../models';
 import { resolveApiBase } from '../utils/api-base';
+import { extractApiErrorMessage } from '../utils/api-error';
 
 @Injectable({
     providedIn: 'root'
@@ -117,8 +118,13 @@ export class ResumeService {
     }
 
     private handleError(error: HttpErrorResponse) {
-        console.error('An API error occurred', error.error);
-        return throwError(() => error);
+        const message = extractApiErrorMessage(error, 'Resume API request failed.');
+        console.error('An API error occurred', message, error.status);
+        return throwError(() => {
+            const enriched = error as HttpErrorResponse & { userMessage?: string };
+            enriched.userMessage = message;
+            return enriched;
+        });
     }
 
 }

@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { Observable, throwError } from 'rxjs';
 import { catchError } from 'rxjs/operators';
+import { resolveApiBase, withApiKeyQuery } from '../utils/api-base';
 import {
   CompleteInterviewPayload,
   CompleteInterviewResult,
@@ -16,7 +17,7 @@ import {
   InterviewStatsResult,
   PodcastTranscriptResult,
 } from '../models';
-import { resolveApiBase, withApiKeyQuery } from '../utils/api-base';
+import { extractApiErrorMessage } from '../utils/api-error';
 
 export interface InterviewListOptions {
   filter?: InterviewListFilter | string;
@@ -218,7 +219,12 @@ export class InterviewService {
   }
 
   private handleError(error: HttpErrorResponse) {
-    console.error('Interview API error', error.error);
-    return throwError(() => error);
+    const message = extractApiErrorMessage(error, 'Interview API request failed.');
+    console.error('Interview API error', message, error.status);
+    return throwError(() => {
+      const enriched = error as HttpErrorResponse & { userMessage?: string };
+      enriched.userMessage = message;
+      return enriched;
+    });
   }
 }

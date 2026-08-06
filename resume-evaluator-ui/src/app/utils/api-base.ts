@@ -2,7 +2,7 @@ import { environment } from '../../environments/environment';
 
 declare global {
   interface Window {
-    __env?: { API_URL?: string };
+    __env?: { API_URL?: string; API_KEY?: string };
   }
 }
 
@@ -29,9 +29,23 @@ export function resolveApiBase(): string {
   return base.replace(/\/$/, '');
 }
 
+/**
+ * Resolve API key without committing secrets.
+ * Order: window.__env.API_KEY (SSR/runtime) → environment.apiKey.
+ */
+export function resolveApiKey(): string {
+  if (typeof window !== 'undefined' && window.__env?.API_KEY) {
+    const raw = String(window.__env.API_KEY).trim();
+    if (raw && raw !== '__API_KEY__') {
+      return raw;
+    }
+  }
+  return String((environment as { apiKey?: string }).apiKey || '').trim();
+}
+
 /** Append api_key query for anchor/window.open downloads when a key is configured. */
 export function withApiKeyQuery(url: string): string {
-  const apiKey = (environment as { apiKey?: string }).apiKey;
+  const apiKey = resolveApiKey();
   if (!apiKey) {
     return url;
   }

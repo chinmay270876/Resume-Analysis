@@ -15,6 +15,7 @@ import {
 } from '../../models';
 import { InterviewService } from '../../services/interview';
 import { ToastService } from '../../services/toast';
+import { extractApiErrorMessage } from '../../utils/api-error';
 import { InterviewQuestionsCard } from '../../components/interview-questions-card/interview-questions-card';
 import { PodcastTranscriptCard } from '../../components/podcast-transcript-card/podcast-transcript-card';
 import { InterviewEvaluationCard } from '../../components/interview-evaluation-card/interview-evaluation-card';
@@ -106,7 +107,7 @@ export class InterviewDetail implements OnInit, OnDestroy {
       },
       error: (err: HttpErrorResponse) => {
         this.loading.set(false);
-        this.error.set(err?.error?.error || err?.message || 'Failed to load interview.');
+        this.error.set(extractApiErrorMessage(err, 'Failed to load interview.'));
       },
     });
   }
@@ -227,7 +228,7 @@ export class InterviewDetail implements OnInit, OnDestroy {
         if (err?.error?.interview) {
           this.interview.set(err.error.interview);
         }
-        this.toast.show(err?.error?.error || 'Evaluation failed.', 'error');
+        this.toast.show(extractApiErrorMessage(err, 'Evaluation failed.'), 'error');
       },
     });
   }
@@ -324,7 +325,7 @@ export class InterviewDetail implements OnInit, OnDestroy {
         },
         error: (err: HttpErrorResponse) => {
           this.actionLoading.set(false);
-          this.toast.show(err?.error?.error || 'Failed to reschedule.', 'error');
+          this.toast.show(extractApiErrorMessage(err, 'Failed to reschedule.'), 'error');
         },
       });
   }
@@ -345,7 +346,7 @@ export class InterviewDetail implements OnInit, OnDestroy {
       },
       error: (err: HttpErrorResponse) => {
         this.actionLoading.set(false);
-        this.toast.show(err?.error?.error || 'Failed to cancel.', 'error');
+        this.toast.show(extractApiErrorMessage(err, 'Failed to cancel.'), 'error');
       },
     });
   }

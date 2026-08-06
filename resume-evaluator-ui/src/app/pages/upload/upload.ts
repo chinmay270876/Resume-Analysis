@@ -8,6 +8,7 @@ import { ResumeTask, RankedCandidate } from '../../models';
 import { ResumeCard } from '../../components/resume-card/resume-card';
 import { InterviewQuestionsCard } from '../../components/interview-questions-card/interview-questions-card';
 import { InterviewScheduler } from '../../components/interview-scheduler/interview-scheduler';
+import { extractApiErrorMessage } from '../../utils/api-error';
 
 @Component({
   selector: 'app-upload',
@@ -184,9 +185,9 @@ export class Upload implements OnInit {
       },
       error: (err: HttpErrorResponse) => {
         this.queue.setInterviewGenerating(false);
-        const body = err?.error;
-        const message = body?.error || body?.message || err?.message || 'Failed to generate interview.';
-        this.queue.setInterviewError(message);
+        this.queue.setInterviewError(
+          extractApiErrorMessage(err, 'Failed to generate interview.')
+        );
       },
     });
   }

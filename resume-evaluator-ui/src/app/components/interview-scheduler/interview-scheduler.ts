@@ -13,6 +13,7 @@ import {
 } from '../../models';
 import { InterviewService } from '../../services/interview';
 import { ToastService } from '../../services/toast';
+import { extractApiErrorMessage } from '../../utils/api-error';
 
 @Component({
   selector: 'app-interview-scheduler',
@@ -140,8 +141,7 @@ export class InterviewScheduler implements OnInit, OnChanges {
       },
       error: (err: HttpErrorResponse) => {
         this.submitting.set(false);
-        const body = err?.error;
-        this.error.set(body?.error || body?.message || err?.message || 'Failed to schedule interview.');
+        this.error.set(extractApiErrorMessage(err, 'Failed to schedule interview.'));
       },
     });
   }

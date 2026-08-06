@@ -21,6 +21,7 @@ import {
   UploadResult,
 } from '../models';
 import { resolveApiBase, withApiKeyQuery } from '../utils/api-base';
+import { extractApiErrorMessage } from '../utils/api-error';
 
 const MAX_FILES = 5;
 const MAX_SIZE_BYTES = 5 * 1024 * 1024;
@@ -487,10 +488,10 @@ export class ResumeQueueService {
           this.rankingInProgress.set(false);
           this.processing = false;
           this.isProcessing.set(false);
-          const message =
-            (err as { error?: { error?: string; message?: string } })?.error?.error ??
-            (err as { error?: { message?: string } })?.error?.message ??
-            'Job description parsing failed.';
+          const message = extractApiErrorMessage(
+            err,
+            'Job description parsing failed.'
+          );
           this.rankingError.set(message);
         },
       });
@@ -705,10 +706,7 @@ export class ResumeQueueService {
         }),
         catchError((err) => {
           stageTimer();
-          const message =
-            (err as { error?: { message?: string } })?.error?.message ??
-            (err instanceof Error ? err.message : undefined) ??
-            'Resume processing failed.';
+          const message = extractApiErrorMessage(err, 'Resume processing failed.');
           this.updateTask(next.id, {
             status: 'failed',
             progress: 0,
@@ -904,11 +902,7 @@ export class ResumeQueueService {
       },
       error: (err) => {
         this.rankingInProgress.set(false);
-        const message =
-          (err as { error?: { error?: string; message?: string } })?.error?.error ??
-          (err as { error?: { message?: string } })?.error?.message ??
-          'Candidate ranking failed.';
-        this.rankingError.set(message);
+        this.rankingError.set(extractApiErrorMessage(err, 'Candidate ranking failed.'));
       },
     });
   }

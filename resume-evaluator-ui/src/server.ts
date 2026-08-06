@@ -8,7 +8,8 @@ import express from 'express';
 import { join } from 'node:path';
 
 const browserDistFolder = join(import.meta.dirname, '../browser');
-const API_URL = process.env['API_URL'] || 'https://resume-analysis-api.onrender.com';
+const API_URL = process.env['API_URL'] || 'https://resume-analysis-api-so26.onrender.com';
+const API_KEY = process.env['API_KEY'] || '';
 
 const app = express();
 const angularApp = new AngularNodeAppEngine();
@@ -65,7 +66,9 @@ app.use((req, res, next) => {
     }
 
     const body = Buffer.concat(chunks).toString('utf-8');
-    const replaced = body.replace(/__API_URL__/g, API_URL);
+    const replaced = body
+      .replace(/__API_URL__/g, API_URL)
+      .replace(/__API_KEY__/g, API_KEY);
 
     return originalEnd.call(this, replaced, encoding, callback);
   } as any;

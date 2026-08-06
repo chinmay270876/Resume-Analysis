@@ -14,6 +14,7 @@ import {
 } from '../../models';
 import { InterviewService } from '../../services/interview';
 import { ToastService } from '../../services/toast';
+import { extractApiErrorMessage } from '../../utils/api-error';
 
 @Component({
   selector: 'app-dashboard',
@@ -184,7 +185,7 @@ export class Dashboard implements OnInit, OnDestroy {
         },
         error: (err: HttpErrorResponse) => {
           this.loading.set(false);
-          const message = err?.error?.error || err?.message || 'Failed to load interviews.';
+          const message = extractApiErrorMessage(err, 'Failed to load interviews.');
           this.error.set(message);
         },
       });
@@ -222,7 +223,7 @@ export class Dashboard implements OnInit, OnDestroy {
       },
       error: (err: HttpErrorResponse) => {
         this.compareLoading.set(false);
-        this.toast.show(err?.error?.error || 'Failed to compare candidates.', 'error');
+        this.toast.show(extractApiErrorMessage(err, 'Failed to compare candidates.'), 'error');
       },
     });
   }
@@ -349,7 +350,7 @@ export class Dashboard implements OnInit, OnDestroy {
         },
         error: (err: HttpErrorResponse) => {
           this.actionId.set(null);
-          this.toast.show(err?.error?.error || 'Failed to reschedule.', 'error');
+          this.toast.show(extractApiErrorMessage(err, 'Failed to reschedule.'), 'error');
         },
       });
   }
@@ -367,7 +368,7 @@ export class Dashboard implements OnInit, OnDestroy {
       },
       error: (err: HttpErrorResponse) => {
         this.actionId.set(null);
-        this.toast.show(err?.error?.error || 'Failed to cancel interview.', 'error');
+        this.toast.show(extractApiErrorMessage(err, 'Failed to cancel interview.'), 'error');
       },
     });
   }

@@ -1,12 +1,12 @@
 import { HttpInterceptorFn } from '@angular/common/http';
-import { environment } from '../../environments/environment';
+import { resolveApiKey } from '../utils/api-base';
 
 /**
- * When environment.apiKey is set, attach X-API-Key to API requests.
- * No-op when unset so local/dev keeps working without a key.
+ * When an API key is configured (runtime or environment), attach X-API-Key.
+ * No-op when unset so local/dev and open backends keep working.
  */
 export const apiKeyInterceptor: HttpInterceptorFn = (req, next) => {
-  const apiKey = (environment as { apiKey?: string }).apiKey;
+  const apiKey = resolveApiKey();
   if (!apiKey) {
     return next(req);
   }

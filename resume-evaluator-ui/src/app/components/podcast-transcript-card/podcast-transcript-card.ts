@@ -13,6 +13,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { PodcastTranscript, PodcastTranscriptLine } from '../../models';
 import { InterviewService } from '../../services/interview';
 import { ToastService } from '../../services/toast';
+import { extractApiErrorMessage } from '../../utils/api-error';
 
 @Component({
   selector: 'app-podcast-transcript-card',
@@ -77,7 +78,7 @@ export class PodcastTranscriptCard implements OnChanges {
         error: (err: HttpErrorResponse) => {
           this.loading.set(false);
           this.available.set(false);
-          this.error.set(err?.error?.error || err?.message || 'Failed to load transcript.');
+          this.error.set(extractApiErrorMessage(err, 'Failed to load transcript.'));
         },
       });
   }
