@@ -80,6 +80,72 @@ function loadWindows() {
 }
 
 /**
+ * Prefer scheduledAt; fall back to scheduledTimestamp (same ISO UTC instant).
+ */
+function resolveScheduledAt(interview) {
+    return interview?.scheduledAt || interview?.scheduledTimestamp || null;
+}
+
+/**
+ * Why a tier is not due. Returns null when the tier IS due.
+ *
+ * Short-notice uses minute-ceil of the true lead time so minute-granular UI
+ * picks ("1 hour from now" at :15:30 → 11:15) still qualify for that tier.
+ * Truncating with dayjs.diff(..., "minute") previously treated 59m59s as 59
+ * and skipped every matching window — leaving pending=0 until a nearer tier.
+ */
+function getReminderSkipReason(interview, minutesBefore, nextMinutesBefore = 0) {
+    const scheduledRaw = resolveScheduledAt(interview);
+    if (!scheduledRaw) {
+        return "missing_scheduledAt";
+    }
+
+    const scheduledAt = dayjs.utc(scheduledRaw);
+    if (!scheduledAt.isValid()) {
+        return "invalid_scheduledAt";
+    }
+
+    const now = dayjs.utc();
+    if (!now.isBefore(scheduledAt)) {
+        return "interview_already_started";
+    }
+
+    // Short-notice first (before due/expiry) so logs show why far tiers never apply
+    // for interviews booked closer than the window (e.g. 12m lead → skip 24h/1h/30m).
+    const createdRaw = interview.createdAt || interview.updatedAt;
+    if (createdRaw) {
+        const createdAt = dayjs.utc(createdRaw);
+        if (createdAt.isValid()) {
+            const leadSeconds = scheduledAt.diff(createdAt, "second");
+            // Ceil to whole minutes to match HH:mm scheduling granularity.
+            // Truncating with dayjs.diff(..., "minute") previously treated 9m40s as 9
+            // and skipped the matching 10m tier forever (pending stayed 0).
+            const leadTimeMinutes = Math.max(0, Math.ceil(leadSeconds / 60));
+            if (leadTimeMinutes < minutesBefore) {
+                return `short_notice_lead_${leadTimeMinutes}m_lt_${minutesBefore}m`;
+            }
+        }
+    }
+
+    const reminderTimestamp = scheduledAt.subtract(minutesBefore, "minute");
+    if (now.isBefore(reminderTimestamp)) {
+        return "not_yet_due";
+    }
+
+    // Expire when the next tier becomes due (prevents stale "24h"/"1h" mail near interview time).
+    // Last tier (nextMinutesBefore === 0) stays eligible until scheduledAt — survives downtime.
+    const expiry =
+        nextMinutesBefore > 0
+            ? scheduledAt.subtract(nextMinutesBefore, "minute")
+            : scheduledAt;
+    if (!now.isBefore(expiry)) {
+        return "window_expired_next_tier_active";
+    }
+
+    return null;
+}
+
+/**
  * A reminder is due when:
  *   status is active (Scheduled / Reminder Sent / In Progress)
  *   AND the per-tier flag is false (reminderSent / reminders.sent*)
@@ -97,44 +163,7 @@ function loadWindows() {
  * @param {number} [nextMinutesBefore=0] minutesBefore of the following tier (0 = last tier)
  */
 function isReminderDue(interview, minutesBefore, nextMinutesBefore = 0) {
-    if (!interview?.scheduledAt) return false;
-
-    const scheduledAt = dayjs.utc(interview.scheduledAt);
-    if (!scheduledAt.isValid()) return false;
-
-    const now = dayjs.utc();
-    if (!now.isBefore(scheduledAt)) {
-        return false; // interview already started
-    }
-
-    const reminderTimestamp = scheduledAt.subtract(minutesBefore, "minute");
-    if (now.isBefore(reminderTimestamp)) {
-        return false; // not yet due
-    }
-
-    // Expire when the next tier becomes due (prevents stale "24h"/"1h" mail near interview time).
-    // Last tier (nextMinutesBefore === 0) stays eligible until scheduledAt — survives downtime.
-    const expiry =
-        nextMinutesBefore > 0
-            ? scheduledAt.subtract(nextMinutesBefore, "minute")
-            : scheduledAt;
-    if (!now.isBefore(expiry)) {
-        return false;
-    }
-
-    const createdRaw = interview.createdAt || interview.updatedAt;
-    if (createdRaw) {
-        const createdAt = dayjs.utc(createdRaw);
-        if (createdAt.isValid()) {
-            const leadTimeMinutes = scheduledAt.diff(createdAt, "minute");
-            // Short-notice: do not send a "24h" reminder for an interview booked 2h ahead
-            if (leadTimeMinutes < minutesBefore) {
-                return false;
-            }
-        }
-    }
-
-    return true;
+    return getReminderSkipReason(interview, minutesBefore, nextMinutesBefore) === null;
 }
 
 function wasReminderSent(interview, field) {
@@ -153,6 +182,15 @@ function logReminder(event, details = {}) {
     console.log(`[Reminder] ${event}${payload}`);
 }
 
+function countByStatus(interviews) {
+    const counts = {};
+    for (const item of interviews) {
+        const key = item.status || "(missing)";
+        counts[key] = (counts[key] || 0) + 1;
+    }
+    return counts;
+}
+
 /**
  * Collect pending reminder jobs for logging / processing.
  * status in active schedule statuses
@@ -161,32 +199,71 @@ function logReminder(event, details = {}) {
  */
 function collectPendingReminders(interviews, windows) {
     const pending = [];
+    const skipLog = [];
 
-    const eligible = interviews.filter(
-        (item) =>
+    const eligible = interviews.filter((item) => {
+        const scheduledAt = resolveScheduledAt(item);
+        return (
             ACTIVE_SCHEDULE_STATUSES.includes(item.status) &&
-            item.scheduledAt &&
+            !!scheduledAt &&
             item.status !== INTERVIEW_STATUSES.CANCELLED &&
             item.status !== INTERVIEW_STATUSES.COMPLETED &&
             item.status !== INTERVIEW_STATUSES.EXPIRED
-    );
+        );
+    });
+
+    const ineligible = interviews.filter((item) => !eligible.includes(item));
+    for (const item of ineligible) {
+        let reason = "status_not_active";
+        if (!resolveScheduledAt(item)) reason = "missing_scheduledAt";
+        else if (item.status === INTERVIEW_STATUSES.CANCELLED) reason = "cancelled";
+        else if (item.status === INTERVIEW_STATUSES.COMPLETED) reason = "completed";
+        else if (item.status === INTERVIEW_STATUSES.EXPIRED) reason = "expired";
+        else if (item.status === INTERVIEW_STATUSES.DRAFT) reason = "draft";
+        skipLog.push({ id: item.id, status: item.status, reason });
+    }
 
     for (const interview of eligible) {
+        // Normalize so due-checks always see scheduledAt even for legacy rows.
+        if (!interview.scheduledAt && interview.scheduledTimestamp) {
+            interview.scheduledAt = interview.scheduledTimestamp;
+        }
+
         for (let i = 0; i < windows.length; i++) {
             const window = windows[i];
             const nextMinutesBefore = windows[i + 1]?.minutesBefore || 0;
 
             if (wasReminderSent(interview, window.field)) {
+                skipLog.push({
+                    id: interview.id,
+                    tier: window.key,
+                    reason: "already_sent",
+                    recipient: interview.candidateEmail || null,
+                });
                 continue;
             }
-            if (!isReminderDue(interview, window.minutesBefore, nextMinutesBefore)) {
+
+            const skipReason = getReminderSkipReason(
+                interview,
+                window.minutesBefore,
+                nextMinutesBefore
+            );
+            if (skipReason) {
+                skipLog.push({
+                    id: interview.id,
+                    tier: window.key,
+                    reason: skipReason,
+                    scheduledAt: resolveScheduledAt(interview),
+                    recipient: interview.candidateEmail || null,
+                });
                 continue;
             }
+
             pending.push({ interview, window });
         }
     }
 
-    return { eligible, pending };
+    return { eligible, pending, skipLog };
 }
 
 async function processReminders() {
@@ -204,17 +281,62 @@ async function processReminders() {
 
     try {
         console.log("[Reminder] Checking pending reminders...");
-        const interviews = await interviewStore.getAllInterviews();
-        const { eligible, pending } = collectPendingReminders(interviews, windows);
+        console.log(`[Reminder] Store file: ${interviewStore.STORE_FILEPATH}`);
 
-        logReminder("Found pending reminders", {
+        // Keep statuses in sync with wall-clock (Scheduled → In Progress → Expired)
+        // so the reminder query and Interview Management share the same lifecycle.
+        const now = dayjs();
+        let interviews = await interviewStore.getAllInterviews();
+        let lifecycleWrites = 0;
+        for (const item of interviews) {
+            const { changed } = interviewService.applyLifecycleTransitions(item, now);
+            if (!changed) continue;
+            await interviewStore.updateInterview(item.id, (current) => {
+                const result = interviewService.applyLifecycleTransitions(current, now);
+                return result.changed ? result.item : current;
+            });
+            lifecycleWrites += 1;
+        }
+        if (lifecycleWrites > 0) {
+            interviews = await interviewStore.getAllInterviews();
+            console.log(`[Reminder] Lifecycle synced for ${lifecycleWrites} interview(s)`);
+        }
+
+        if (interviews.length === 0) {
+            console.log(
+                "[Reminder] Store is empty — no scheduled interviews. " +
+                    "Reminders only run after POST /api/interviews (Schedule Interview). " +
+                    "Resume upload / AI interview generation does NOT create a calendar schedule."
+            );
+        }
+
+        const scheduledStatusCount = interviews.filter(
+            (item) => item.status === INTERVIEW_STATUSES.SCHEDULED
+        ).length;
+        const { eligible, pending, skipLog } = collectPendingReminders(interviews, windows);
+
+        const summary = {
+            store: interviewStore.STORE_FILEPATH,
             total: interviews.length,
+            scheduledStatus: scheduledStatusCount,
             eligible: eligible.length,
             pending: pending.length,
+            statusCounts: countByStatus(interviews),
             windows: windows.map((w) => `${w.key}:${w.minutesBefore}m`),
             nowUtc: dayjs.utc().toISOString(),
-        });
+        };
+        // Always print (not gated by NODE_ENV) — primary diagnostic line.
+        console.log("[Reminder] Found pending reminders", JSON.stringify(summary));
         console.log(`[Reminder] Found ${pending.length} pending reminders`);
+
+        if (skipLog.length > 0) {
+            // Cap volume so large DBs do not flood the console every minute.
+            const preview = skipLog.slice(0, 40);
+            console.log(
+                "[Reminder] Skip details",
+                JSON.stringify({ count: skipLog.length, shown: preview.length, items: preview })
+            );
+        }
 
         // Track in-memory sent flags within this cycle to avoid double-send
         // if the same interview somehow appears twice.
@@ -223,31 +345,35 @@ async function processReminders() {
         for (const { interview, window } of pending) {
             processed += 1;
             const cycleKey = `${interview.id}:${window.key}`;
+            const recipient = interview.candidateEmail || null;
 
             if (sentThisCycle.has(cycleKey) || wasReminderSent(interview, window.field)) {
                 logReminder("Skipped Already Sent", {
                     id: interview.id,
                     type: window.key,
+                    recipient,
                 });
                 skipped += 1;
                 continue;
             }
 
+            const scheduledAtIso = resolveScheduledAt(interview);
             const reminderTimestamp =
                 interview.reminderTimestamps?.[window.key] ||
-                dayjs.utc(interview.scheduledAt).subtract(window.minutesBefore, "minute").toISOString();
+                dayjs.utc(scheduledAtIso).subtract(window.minutesBefore, "minute").toISOString();
 
             console.log(
-                `[Reminder] Sending reminder for Interview ID ${interview.id} (${window.key})`
+                `[Reminder] Sending reminder for Interview ID ${interview.id} (${window.key}) → ${recipient}`
             );
             logReminder("Sending Email", {
                 id: interview.id,
                 type: window.key,
+                recipient,
                 candidateName: interview.candidateName,
-                candidateEmail: interview.candidateEmail,
+                candidateEmail: recipient,
                 interviewTime: `${interview.time} (${interview.timezone || "UTC"})`,
                 interviewDate: interview.date,
-                scheduledAt: interview.scheduledAt,
+                scheduledAt: scheduledAtIso,
                 reminderTimestamp,
             });
 
@@ -267,22 +393,24 @@ async function processReminders() {
                     interview.reminderSent = true;
                     sent += 1;
                     console.log(
-                        `[Reminder] Reminder sent successfully for Interview ID ${interview.id}`
+                        `[Reminder] Reminder sent successfully for Interview ID ${interview.id} → ${recipient}`
                     );
                     logReminder("Reminder Sent", {
                         id: interview.id,
                         type: window.key,
+                        recipient,
                         messageId: result.messageId || null,
                         smtpResponse: result.response || null,
                     });
                 } else {
                     failed += 1;
                     console.log(
-                        `[Reminder] Reminder failed for Interview ID ${interview.id}: ${result?.reason || "unknown"}`
+                        `[Reminder] Reminder failed for Interview ID ${interview.id} → ${recipient}: ${result?.reason || "unknown"}`
                     );
                     logReminder("Reminder Failed", {
                         id: interview.id,
                         type: window.key,
+                        recipient,
                         reason: result?.reason || "unknown",
                     });
                 }
@@ -290,12 +418,13 @@ async function processReminders() {
                 // Continue processing other reminders even if one fails
                 failed += 1;
                 console.error(
-                    `[Reminder] Reminder failed for Interview ID ${interview.id}: ${err.message}`
+                    `[Reminder] Reminder failed for Interview ID ${interview.id} → ${recipient}: ${err.message}`
                 );
                 if (err.stack) console.error(err.stack);
                 logReminder("Reminder Failed", {
                     id: interview.id,
                     type: window.key,
+                    recipient,
                     error: err.message,
                 });
             }
@@ -322,8 +451,10 @@ function startReminderScheduler() {
     const windows = loadWindows();
 
     console.log("[Reminder] Scheduler started");
+    console.log(`[Reminder] Store file: ${interviewStore.STORE_FILEPATH}`);
     logReminder("Scheduler Started", {
         intervalMs,
+        store: interviewStore.STORE_FILEPATH,
         windows: windows.map((w) => `${w.key}:${w.minutesBefore}m`),
         timezoneMode: "UTC absolute (ISO scheduledAt)",
     });
@@ -368,6 +499,8 @@ module.exports = {
     stopReminderScheduler,
     processReminders,
     isReminderDue,
+    getReminderSkipReason,
+    resolveScheduledAt,
     loadWindows,
     collectPendingReminders,
 };

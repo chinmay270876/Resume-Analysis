@@ -4,30 +4,58 @@ const fsp = require("fs").promises;
 const DATA_DIR = process.env.DATA_DIR || "data";
 const REPORT_DIR = process.env.REPORT_DIR || "results";
 const STORE_FILENAME = "interviews.json";
-const STORE_FILEPATH = path.join(process.cwd(), DATA_DIR, STORE_FILENAME);
-const LEGACY_STORE_FILEPATH = path.join(process.cwd(), REPORT_DIR, STORE_FILENAME);
+// Anchor to this package root (resume-evaluator/), not process.cwd(), so the
+// scheduler and HTTP create/update paths always share the same JSON store
+// even when the process is launched from start-all/ or the monorepo root.
+const PROJECT_ROOT = path.resolve(__dirname, "..", "..");
+const STORE_FILEPATH = path.join(PROJECT_ROOT, DATA_DIR, STORE_FILENAME);
+const LEGACY_STORE_FILEPATH = path.join(PROJECT_ROOT, REPORT_DIR, STORE_FILENAME);
 
 let storeMutex = Promise.resolve();
 let migrated = false;
+
+async function readInterviewCount(filepath) {
+    try {
+        const raw = await fsp.readFile(filepath, "utf8");
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed?.interviews) ? parsed.interviews.length : 0;
+    } catch {
+        return -1; // missing or unreadable
+    }
+}
 
 async function migrateLegacyStoreIfNeeded() {
     if (migrated) return;
     migrated = true;
 
+    let canonicalCount = -1;
     try {
         await fsp.access(STORE_FILEPATH);
-        return; // already in private data dir
+        canonicalCount = await readInterviewCount(STORE_FILEPATH);
     } catch {
-        // continue — try legacy location
+        canonicalCount = -1;
+    }
+
+    // Already have interviews in the canonical store — nothing to migrate.
+    if (canonicalCount > 0) {
+        return;
     }
 
     try {
         await fsp.access(LEGACY_STORE_FILEPATH);
+    } catch {
+        return; // no legacy file
+    }
+
+    const legacyCount = await readInterviewCount(LEGACY_STORE_FILEPATH);
+    // Migrate when canonical is missing/empty and legacy has rows.
+    // Previously an empty data/interviews.json blocked migration forever.
+    if (legacyCount > 0) {
         await fsp.mkdir(path.dirname(STORE_FILEPATH), { recursive: true });
         await fsp.copyFile(LEGACY_STORE_FILEPATH, STORE_FILEPATH);
-        console.log(`📦 Migrated interviews store from ${LEGACY_STORE_FILEPATH} to ${STORE_FILEPATH}`);
-    } catch {
-        // no legacy file — ensureStoreFile will create empty store
+        console.log(
+            `📦 Migrated interviews store from ${LEGACY_STORE_FILEPATH} to ${STORE_FILEPATH} (${legacyCount} interview(s))`
+        );
     }
 }
 
@@ -47,10 +75,16 @@ async function readStore() {
     try {
         const parsed = JSON.parse(raw);
         if (!parsed || !Array.isArray(parsed.interviews)) {
+            console.error(
+                `[InterviewStore] Invalid store shape at ${STORE_FILEPATH}; expected { interviews: [] }`
+            );
             return { interviews: [] };
         }
         return parsed;
-    } catch {
+    } catch (err) {
+        console.error(
+            `[InterviewStore] Failed to parse ${STORE_FILEPATH}: ${err.message}`
+        );
         return { interviews: [] };
     }
 }
@@ -137,4 +171,5 @@ module.exports = {
     deleteInterview,
     replaceAllInterviews,
     STORE_FILEPATH,
+    PROJECT_ROOT,
 };

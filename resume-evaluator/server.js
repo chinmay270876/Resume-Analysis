@@ -59,9 +59,13 @@ const defaultOrigins = [
     "https://resume-analysis-api-so26.onrender.com",
 ];
 
-const allowedOrigins = process.env.CORS_ORIGINS ?
-    process.env.CORS_ORIGINS.split(",") :
-    defaultOrigins;
+// Merge env origins with defaults. Previously CORS_ORIGINS *replaced*
+// defaults, which blocked the deployed Render frontend when .env only
+// listed localhost — scheduling requests never reached this API from prod UI.
+const envOrigins = process.env.CORS_ORIGINS
+    ? process.env.CORS_ORIGINS.split(",").map((s) => s.trim()).filter(Boolean)
+    : [];
+const allowedOrigins = [...new Set([...defaultOrigins, ...envOrigins])];
 
 app.use(cors({
     origin(origin, callback) {

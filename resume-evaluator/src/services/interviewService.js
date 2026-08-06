@@ -511,6 +511,7 @@ function buildInterviewRecord(payload, schedule) {
     const jobRole = resolveJobRoleFromPayload(payload);
 
     console.log("[Interview] Interview created — reminder scheduled", {
+        store: interviewStore.STORE_FILEPATH,
         candidateName: schedule.candidateName,
         candidateEmail: schedule.candidateEmail,
         interviewDate: schedule.date,
@@ -1124,6 +1125,7 @@ module.exports = {
     parseInterviewDateTime,
     computeReminderTimestamps,
     computeJoinState,
+    applyLifecycleTransitions,
     isPostCompletion,
     getInterviewStats,
     getCandidateRanking,
