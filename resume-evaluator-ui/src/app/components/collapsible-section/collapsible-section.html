@@ -1,0 +1,64 @@
+<section class="as-section" [attr.aria-labelledby]="sectionId() + '-title'">
+  <div class="as-header">
+    <div class="as-title-block">
+      <span class="as-badge" *ngIf="badge()">{{ badge() }}</span>
+      <h2 class="as-title" [id]="sectionId() + '-title'">{{ title() }}</h2>
+    </div>
+
+    <div class="as-actions">
+      <div class="as-progress" *ngIf="isWaiting()" aria-hidden="true">
+        <svg class="as-ring" viewBox="0 0 40 40" aria-hidden="true">
+          <circle class="as-ring-bg" cx="20" cy="20" r="16" />
+          <circle
+            class="as-ring-fg"
+            cx="20"
+            cy="20"
+            r="16"
+            [attr.stroke-dasharray]="circumference"
+            [attr.stroke-dashoffset]="ringOffset()" />
+        </svg>
+        <div class="as-progress-meta">
+          <span class="as-progress-pct">{{ estimate().progress }}%</span>
+          <span class="as-progress-time">{{ estimate().remainingSeconds }}s</span>
+        </div>
+      </div>
+
+      <button
+        type="button"
+        class="as-status-btn"
+        [class.waiting]="isWaiting()"
+        [class.ready]="isReady() && !expanded()"
+        [class.open]="isReady() && expanded()"
+        [class.error]="hasError()"
+        [disabled]="isWaiting() || hasError()"
+        [attr.aria-expanded]="isReady() ? expanded() : null"
+        [attr.aria-controls]="isReady() ? contentId() : null"
+        [attr.aria-label]="title() + ': ' + primaryLabel()"
+        (click)="onPrimaryAction()">
+        {{ primaryLabel() }}
+      </button>
+
+      <button
+        type="button"
+        class="as-chevron-btn"
+        *ngIf="isReady()"
+        [attr.aria-expanded]="expanded()"
+        [attr.aria-controls]="contentId()"
+        [attr.aria-label]="(expanded() ? 'Collapse ' : 'Expand ') + title()"
+        (click)="onToggleExpand()">
+        <span class="as-chevron" [class.collapsed]="!expanded()" aria-hidden="true">▾</span>
+      </button>
+    </div>
+  </div>
+
+  <p class="as-error-msg" *ngIf="hasError()" role="alert">{{ error() }}</p>
+
+  <div
+    class="as-body"
+    [id]="contentId()"
+    *ngIf="isReady() && expanded()"
+    role="region"
+    [attr.aria-label]="title() + ' content'">
+    <ng-content></ng-content>
+  </div>
+</section>

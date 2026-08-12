@@ -12,6 +12,23 @@
   animation: fadeInUp 0.5s ease both;
 }
 
+.sched-card.as-embedded {
+  background: transparent;
+  backdrop-filter: none;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  margin: 0;
+  box-shadow: none;
+  animation: none;
+}
+
+.sched-embedded-hint {
+  margin: 0 0 16px;
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+}
+
 .sched-header {
   margin-bottom: 24px;
 }

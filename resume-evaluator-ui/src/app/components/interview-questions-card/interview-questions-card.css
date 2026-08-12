@@ -12,6 +12,28 @@
   animation: fadeInUp 0.5s ease both;
 }
 
+.iq-card.as-embedded {
+  background: transparent;
+  backdrop-filter: none;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  margin: 0;
+  box-shadow: none;
+  animation: none;
+}
+
+.iq-header-compact {
+  margin-bottom: 16px;
+}
+
+.iq-embedded-title {
+  margin: 0 0 6px;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
 .iq-header {
   margin-bottom: 28px;
 }

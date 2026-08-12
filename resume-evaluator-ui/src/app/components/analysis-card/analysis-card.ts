@@ -16,6 +16,8 @@ interface ExperienceEntry {
 })
 export class AnalysisCard {
   readonly analysis = input<Analysis | null>(null);
+  /** When false, the card omits its own h2 (parent collapsible section supplies the title). */
+  readonly showHeader = input(true);
 
   protected trackByIndex(index: number, _item: unknown): number {
     return index;

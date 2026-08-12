@@ -1,5 +1,5 @@
-<div *ngIf="analysis()" class="result-card analysis-card">
-  <div class="section-header">
+<div *ngIf="analysis()" class="result-card analysis-card" [class.as-embedded]="!showHeader()">
+  <div class="section-header" *ngIf="showHeader()">
     <h2>📄 Resume Analysis</h2>
   </div>
 

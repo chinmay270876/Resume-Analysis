@@ -79,9 +79,9 @@
       ❌ {{ task().error }}
     </div>
 
-    <!-- RESULTS (Completed only) -->
-    <div class="card-results" *ngIf="isCompleted() && result() as r">
-      <div class="result-head">
+    <!-- SECTION SHELLS (independent Waiting / Ready while processing or after) -->
+    <div class="card-results" *ngIf="showResultSections()">
+      <div class="result-head" *ngIf="isCompleted() && result() as r">
         <div class="result-candidate">
           <span class="result-avatar">👤</span>
           <div>
@@ -97,15 +97,49 @@
         </span>
       </div>
 
-      <app-analysis-card [analysis]="r.analysis"></app-analysis-card>
-      <app-evaluation-card [evaluation]="r.evaluation" [ats]="r.atsEvaluation"></app-evaluation-card>
+      <app-collapsible-section
+        title="Resume Analysis"
+        [sectionId]="'resume-analysis-' + task().id"
+        [waiting]="isProcessing()"
+        [ready]="analysisReady()"
+        [error]="sectionError()"
+        [estimatedSeconds]="40">
+        <app-analysis-card
+          *ngIf="result()?.analysis as analysis"
+          [analysis]="analysis"
+          [showHeader]="false">
+        </app-analysis-card>
+      </app-collapsible-section>
 
-      <div class="podcast-block" *ngIf="r.raw.podcastPath">
-        <h4>🎧 Podcast</h4>
-        <audio controls [src]="r.raw.podcastPath"></audio>
-      </div>
+      <app-collapsible-section
+        title="Evaluation"
+        [sectionId]="'evaluation-' + task().id"
+        [waiting]="isProcessing()"
+        [ready]="evaluationReady()"
+        [error]="sectionError()"
+        [estimatedSeconds]="45">
+        <app-evaluation-card
+          *ngIf="result()?.evaluation as evaluation"
+          [evaluation]="evaluation"
+          [ats]="result()?.atsEvaluation ?? null"
+          [showHeader]="false">
+        </app-evaluation-card>
+      </app-collapsible-section>
 
-      <div class="card-actions">
+      <app-collapsible-section
+        *ngIf="showPodcastSection()"
+        title="Podcast"
+        [sectionId]="'podcast-' + task().id"
+        [waiting]="podcastWaiting()"
+        [ready]="podcastReady()"
+        [error]="null"
+        [estimatedSeconds]="60">
+        <div class="podcast-block" *ngIf="result()?.raw?.podcastPath as podcastPath">
+          <audio controls [src]="podcastPath"></audio>
+        </div>
+      </app-collapsible-section>
+
+      <div class="card-actions" *ngIf="isCompleted() && result() as r">
         <button
           class="action-btn"
           type="button"

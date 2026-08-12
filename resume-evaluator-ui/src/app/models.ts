@@ -188,6 +188,13 @@ export interface ResumeTask {
   uploadId?: string;
   /** Backend resume UUID matched against progress.resumes[].resumeId. */
   resumeId?: string;
+  /**
+   * JD-primary structured interview question bank for this candidate.
+   * Populated automatically after successful Analyse Resume when a JD is present.
+   */
+  structuredInterview?: StructuredInterview | null;
+  /** Non-fatal interview-generation failure for this candidate (analysis still succeeded). */
+  interviewGenError?: string | null;
 }
 
 // =============================================================================

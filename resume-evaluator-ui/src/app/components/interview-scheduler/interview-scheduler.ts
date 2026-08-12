@@ -27,6 +27,8 @@ export class InterviewScheduler implements OnInit, OnChanges {
   readonly analysis = input<Analysis | null>(null);
   readonly jdAnalysis = input<JdAnalysis | null>(null);
   readonly resumeId = input<string | null>(null);
+  /** When false, omits badge/title chrome (parent collapsible section supplies it). */
+  readonly showHeader = input(true);
 
   readonly scheduled = output<ScheduledInterview>();
 

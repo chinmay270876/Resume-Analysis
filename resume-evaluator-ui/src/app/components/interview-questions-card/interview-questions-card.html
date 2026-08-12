@@ -1,5 +1,5 @@
-<div *ngIf="interview" class="result-card iq-card" role="region" [attr.aria-label]="interview.interviewTitle">
-  <div class="iq-header">
+<div *ngIf="interview" class="result-card iq-card" [class.as-embedded]="!showHeader" role="region" [attr.aria-label]="interview.interviewTitle">
+  <div class="iq-header" *ngIf="showHeader">
     <span class="iq-badge">Interview Questions</span>
     <h2>{{ interview.interviewTitle }}</h2>
     <p class="iq-meta">
@@ -8,6 +8,14 @@
       <span>{{ interview.estimatedDuration }}</span>
     </p>
     <p class="iq-plan-note">Interview plan for the AI Interview Bot — questions only (no answers or transcript).</p>
+  </div>
+  <div class="iq-header iq-header-compact" *ngIf="!showHeader">
+    <h3 class="iq-embedded-title">{{ interview.interviewTitle }}</h3>
+    <p class="iq-meta">
+      <span>{{ interview.totalQuestions }} questions</span>
+      <span class="iq-dot">·</span>
+      <span>{{ interview.estimatedDuration }}</span>
+    </p>
   </div>
 
   <div class="iq-section" *ngFor="let section of interview.sections; trackBy: trackBySection">

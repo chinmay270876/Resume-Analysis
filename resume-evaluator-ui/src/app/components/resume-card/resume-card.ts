@@ -7,6 +7,7 @@ import {
 } from '../../models';
 import { AnalysisCard } from '../analysis-card/analysis-card';
 import { EvaluationCard } from '../evaluation-card/evaluation-card';
+import { CollapsibleSection } from '../collapsible-section/collapsible-section';
 
 interface StatusMeta {
   label: string;
@@ -16,7 +17,7 @@ interface StatusMeta {
 @Component({
   selector: 'app-resume-card',
   standalone: true,
-  imports: [CommonModule, AnalysisCard, EvaluationCard],
+  imports: [CommonModule, AnalysisCard, EvaluationCard, CollapsibleSection],
   templateUrl: './resume-card.html',
   styleUrl: './resume-card.css',
 })
@@ -100,6 +101,30 @@ export class ResumeCard {
     }
     return 'Download Report';
   });
+
+  /** Show section shells once this resume is actively processing or finished. */
+  protected readonly showResultSections = computed(
+    () => this.isProcessing() || this.isCompleted() || this.isFailed()
+  );
+
+  protected readonly analysisReady = computed(() => !!this.result()?.analysis);
+
+  protected readonly evaluationReady = computed(() => !!this.result()?.evaluation);
+
+  protected readonly sectionError = computed(() =>
+    this.isFailed() ? this.task().error : null
+  );
+
+  protected readonly podcastReady = computed(() => !!this.result()?.raw?.podcastPath);
+
+  /** Keep Podcast visible while processing, or once a path exists. */
+  protected readonly showPodcastSection = computed(
+    () => this.isProcessing() || this.podcastReady()
+  );
+
+  protected readonly podcastWaiting = computed(
+    () => this.isProcessing() && !this.podcastReady()
+  );
 
   protected stageState(index: number): 'done' | 'active' | 'pending' {
     const current = this.task().stageIndex;

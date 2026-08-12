@@ -1,9 +1,12 @@
-<div class="sched-card" role="region" aria-label="Interview Scheduler">
-  <div class="sched-header">
+<div class="sched-card" [class.as-embedded]="!showHeader()" role="region" aria-label="Interview Scheduler">
+  <div class="sched-header" *ngIf="showHeader()">
     <span class="sched-badge">Interview Scheduling</span>
     <h2>Schedule Interview</h2>
     <p>Enter the candidate details, then set date, time, and timezone to send the invitation.</p>
   </div>
+  <p class="sched-embedded-hint" *ngIf="!showHeader()">
+    Enter the candidate details, then set date, time, and timezone to send the invitation.
+  </p>
 
   <div *ngIf="createdInterview() as created" class="sched-success">
     <p>

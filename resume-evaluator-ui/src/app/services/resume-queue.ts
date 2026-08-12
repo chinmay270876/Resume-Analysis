@@ -4,6 +4,7 @@ import { Observable, Subscription, throwError, interval } from 'rxjs';
 import { catchError, map, switchMap, take, filter } from 'rxjs/operators';
 import { ResumeService } from './resume';
 import { ToastService } from './toast';
+import { SectionEstimateService } from './section-estimate';
 import {
   Analysis,
   AtsEvaluation,
@@ -54,6 +55,7 @@ interface PersistedSession {
   interviewAnalysis: Analysis | null;
   interviewJdAnalysis: JdAnalysis | null;
   interviewError: string | null;
+  interviewResumeId: string | null;
 }
 
 function normalizeAnalysis(raw: Record<string, unknown> | undefined): Analysis | null {
@@ -230,6 +232,7 @@ export class ResumeQueueService {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly resumeService = inject(ResumeService);
   private readonly toastService = inject(ToastService);
+  private readonly sectionEstimates = inject(SectionEstimateService);
 
   readonly maxFiles = MAX_FILES;
 
@@ -279,6 +282,8 @@ export class ResumeQueueService {
   readonly structuredInterview = signal<StructuredInterview | null>(null);
   readonly interviewAnalysis = signal<Analysis | null>(null);
   readonly interviewJdAnalysis = signal<JdAnalysis | null>(null);
+  /** resumeId (or uploadId) of the candidate whose interview is bound to the scheduler. */
+  readonly interviewResumeId = signal<string | null>(null);
 
   constructor() {
     if (isPlatformBrowser(this.platformId)) {
@@ -296,6 +301,7 @@ export class ResumeQueueService {
         this.interviewAnalysis();
         this.interviewJdAnalysis();
         this.interviewError();
+        this.interviewResumeId();
         if (!this.hydrating) {
           this.persistToSession();
         }
@@ -418,6 +424,7 @@ export class ResumeQueueService {
     this.stopTimer();
     this.pollingSubscriptions.forEach((sub) => sub.unsubscribe());
     this.pollingSubscriptions.clear();
+    this.sectionEstimates.clearAll();
     this.taskList = [];
     this.orderSeq = 0;
     this.processing = false;
@@ -429,6 +436,7 @@ export class ResumeQueueService {
     this.rankingError.set(null);
     this.showQueue.set(false);
     this.interviewGenerating.set(false);
+    this.interviewResumeId.set(null);
     this.clearInterviewResults();
     this.emitTasks();
     this.isProcessing.set(false);
@@ -446,7 +454,7 @@ export class ResumeQueueService {
 
   /** Starts sequential processing of all queued resumes (and optional JD parsing). */
   start(): void {
-    if (this.processing) {
+    if (this.processing || this.interviewGenerating()) {
       return;
     }
     this.currentSubscription?.unsubscribe();
@@ -455,15 +463,12 @@ export class ResumeQueueService {
       return;
     }
 
+    // Fresh analysis run — clear prior interview artefacts to avoid duplicates.
+    this.clearInterviewResults();
+    this.sectionEstimates.clearAll();
+
     const jdFile = this.jdFile();
     if (jdFile) {
-      const completedCount = this.taskList.filter((t) => t.status === 'completed').length;
-      const queuedCount = this.taskList.filter((t) => t.status === 'queued').length;
-      if (queuedCount + completedCount < 2) {
-        this.rankingError.set('Upload at least 2 resumes when using a Job Description for ranking.');
-        return;
-      }
-
       this.processing = true;
       this.isProcessing.set(true);
       this.rankingInProgress.set(true);
@@ -517,6 +522,18 @@ export class ResumeQueueService {
     this.interviewAnalysis.set(null);
     this.interviewJdAnalysis.set(null);
     this.interviewError.set(null);
+    this.interviewResumeId.set(null);
+    let changed = false;
+    this.taskList = this.taskList.map((t) => {
+      if (t.structuredInterview || t.interviewGenError) {
+        changed = true;
+        return { ...t, structuredInterview: null, interviewGenError: null };
+      }
+      return t;
+    });
+    if (changed) {
+      this.emitTasks();
+    }
   }
 
   setInterviewGenerating(value: boolean): void {
@@ -530,11 +547,13 @@ export class ResumeQueueService {
   setInterviewResult(
     interview: StructuredInterview | null,
     analysis: Analysis | null,
-    jdAnalysis: JdAnalysis | null
+    jdAnalysis: JdAnalysis | null,
+    resumeId: string | null = null
   ): void {
     this.structuredInterview.set(interview);
     this.interviewAnalysis.set(analysis);
     this.interviewJdAnalysis.set(jdAnalysis);
+    this.interviewResumeId.set(resumeId);
   }
 
   /** Downloads the interview transcript for a completed resume. */
@@ -870,6 +889,102 @@ export class ResumeQueueService {
     // Do not cancel background podcast/email polls here — they outlive the upload queue.
     this.emitOverall();
     this.maybeRankCandidates();
+    // After successful analyses, auto-generate JD-based interview questions per candidate.
+    this.maybeGenerateInterviews();
+  }
+
+  /**
+   * Invokes the existing Generate Interview API for each successfully analysed
+   * candidate when a JD file is available. Interview failures are non-fatal —
+   * analysis results remain available.
+   */
+  private maybeGenerateInterviews(): void {
+    const jd = this.jdFile();
+    if (!jd) {
+      return;
+    }
+
+    const completed = this.taskList.filter(
+      (t) => t.status === 'completed' && t.result && t.file
+    );
+    if (completed.length === 0) {
+      return;
+    }
+
+    this.interviewError.set(null);
+    this.interviewGenerating.set(true);
+    this.generateInterviewSequentially(completed, 0, jd, []);
+  }
+
+  private generateInterviewSequentially(
+    tasks: ResumeTask[],
+    index: number,
+    jd: File,
+    failures: string[]
+  ): void {
+    if (index >= tasks.length) {
+      this.interviewGenerating.set(false);
+      if (failures.length > 0) {
+        if (!this.structuredInterview()) {
+          this.interviewError.set(
+            'Resume analysis completed, but interview questions could not be generated.'
+          );
+        } else {
+          this.interviewError.set(
+            `Resume analysis completed, but interview questions could not be generated for: ${failures.join(', ')}.`
+          );
+        }
+      }
+      return;
+    }
+
+    const task = tasks[index];
+    const resumeFile = task.file;
+    if (!resumeFile) {
+      // Should not happen (filtered above); skip without failing analysis.
+      this.generateInterviewSequentially(tasks, index + 1, jd, failures);
+      return;
+    }
+
+    // Reuse existing POST /api/generate-interview (JD-primary + resume personalization).
+    this.currentSubscription = this.resumeService.generateInterview(jd, resumeFile).subscribe({
+      next: (result) => {
+        if (result?.success && result.interview) {
+          this.updateTask(task.id, {
+            structuredInterview: result.interview,
+            interviewGenError: null,
+          });
+          // Primary (first success) powers InterviewScheduler + session restore.
+          if (!this.structuredInterview()) {
+            this.setInterviewResult(
+              result.interview,
+              result.analysis || task.result?.analysis || null,
+              result.jdAnalysis || this.jdAnalysis() || null,
+              task.resumeId || task.uploadId || null
+            );
+          }
+        } else {
+          const label = task.result?.analysis?.candidateName || task.fileName;
+          failures.push(label);
+          this.updateTask(task.id, {
+            interviewGenError:
+              result?.error || result?.message || 'Failed to generate interview questions.',
+          });
+        }
+        this.generateInterviewSequentially(tasks, index + 1, jd, failures);
+      },
+      error: (err) => {
+        const label = task.result?.analysis?.candidateName || task.fileName;
+        failures.push(label);
+        this.updateTask(task.id, {
+          interviewGenError: extractApiErrorMessage(
+            err,
+            'Failed to generate interview questions.'
+          ),
+        });
+        this.generateInterviewSequentially(tasks, index + 1, jd, failures);
+      },
+    });
   }
 
   private maybeRankCandidates(): void {
@@ -879,7 +994,7 @@ export class ResumeQueueService {
     }
 
     const completedTasks = this.taskList.filter((t) => t.status === 'completed' && t.result);
-    if (completedTasks.length < 2) {
+    if (completedTasks.length < 1) {
       return;
     }
 
@@ -1010,6 +1125,7 @@ export class ResumeQueueService {
       interviewAnalysis: this.interviewAnalysis(),
       interviewJdAnalysis: this.interviewJdAnalysis(),
       interviewError: this.interviewError(),
+      interviewResumeId: this.interviewResumeId(),
     };
   }
 
@@ -1094,6 +1210,7 @@ export class ResumeQueueService {
       this.interviewAnalysis.set(snapshot.interviewAnalysis ?? null);
       this.interviewJdAnalysis.set(snapshot.interviewJdAnalysis ?? null);
       this.interviewError.set(snapshot.interviewError ?? null);
+      this.interviewResumeId.set(snapshot.interviewResumeId ?? null);
       this.interviewGenerating.set(false);
       this.processing = false;
       this.isProcessing.set(false);

@@ -11,6 +11,8 @@ import { StructuredInterview, InterviewSection, InterviewQuestion } from '../../
 })
 export class InterviewQuestionsCard {
   @Input() interview: StructuredInterview | null = null;
+  /** When false, omits badge/title chrome (parent collapsible section supplies it). */
+  @Input() showHeader = true;
 
   /** sectionName -> collapsed */
   protected collapsed: Record<string, boolean> = {};

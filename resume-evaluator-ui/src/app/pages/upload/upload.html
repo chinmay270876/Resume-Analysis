@@ -22,32 +22,24 @@
     </p>
   </div>
 
-  <!-- FEATURES -->
-  <div class="features-grid">
-    <div class="feature-card">
-      <div class="feature-icon">📄</div>
-      <h3>Resume Analysis</h3>
-      <p>AI extracts skills, experience and strengths instantly.</p>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">🎤</div>
-      <h3>Interview Generator</h3>
-      <p>Build a structured 25-minute interview from the Job Description.</p>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">📊</div>
-      <h3>Candidate Scoring</h3>
-      <p>Evaluate candidates using structured AI metrics.</p>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">🏆</div>
-      <h3>Candidate Ranking</h3>
-      <p>Compare multiple candidates against a Job Description and rank by fit.</p>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">🎧</div>
-      <h3>Podcast Creation</h3>
-      <p>Convert interviews into engaging audio reports.</p>
+  <!-- FEATURES (section navigation) -->
+  <div class="features-grid" role="navigation" aria-label="Analysis feature sections">
+    <div
+      *ngFor="let card of featureCards"
+      class="feature-card"
+      [class.disabled]="!isAnalysisComplete()"
+      [class.active]="activeSection() === card.section"
+      [class.interactive]="isAnalysisComplete()"
+      role="button"
+      [attr.tabindex]="0"
+      [attr.aria-disabled]="!isAnalysisComplete() ? true : null"
+      [attr.aria-current]="activeSection() === card.section ? 'true' : null"
+      [attr.aria-label]="card.title + (isAnalysisComplete() ? '' : ' (locked until analysis completes)')"
+      (click)="onCardClick(card.section)"
+      (keydown)="onCardKeydown($event, card.section)">
+      <div class="feature-icon" aria-hidden="true">{{ card.icon }}</div>
+      <h3>{{ card.title }}</h3>
+      <p>{{ card.description }}</p>
     </div>
   </div>
 
@@ -65,8 +57,8 @@
 
       <!-- RIGHT SIDE INTEGRATED UPLOAD ACTION AREA -->
       <div class="upload-zone" [class.drag-over]="isDragOver()"
-        [class.disabled]="isProcessing() || tasks().length >= maxFiles"
-        [attr.aria-disabled]="(isProcessing() || tasks().length >= maxFiles) ? true : null"
+        [class.disabled]="isProcessing() || interviewGenerating() || tasks().length >= maxFiles"
+        [attr.aria-disabled]="(isProcessing() || interviewGenerating() || tasks().length >= maxFiles) ? true : null"
         (dragover)="onDragOver($event)" (dragleave)="onDragLeave($event)" (drop)="onDrop($event)"
         (keydown)="onZoneKeydown($event)" (click)="onZoneClick($event)" role="button" tabindex="0"
         aria-label="Upload resumes by dropping PDF files here or clicking Drag & Drop or Choose Resumes">
@@ -88,7 +80,7 @@
             Drag &amp; Drop or Choose Resumes
             <input type="file"
               accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-              multiple [disabled]="isProcessing() || tasks().length >= maxFiles" (change)="onFilesSelected($event)"
+              multiple [disabled]="isProcessing() || interviewGenerating() || tasks().length >= maxFiles" (change)="onFilesSelected($event)"
               hidden />
           </label>
         </div>
@@ -104,11 +96,11 @@
       </div>
 
       <div class="jd-upload-row" *ngIf="!hasJobDescription(); else jdSelected">
-        <label class="jd-upload-btn" [class.disabled]="isProcessing()">
+        <label class="jd-upload-btn" [class.disabled]="isProcessing() || interviewGenerating()">
           📋 Upload Job Description
           <input type="file"
             accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            [disabled]="isProcessing()" (change)="onJdSelected($event)" hidden />
+            [disabled]="isProcessing() || interviewGenerating()" (change)="onJdSelected($event)" hidden />
         </label>
       </div>
 
@@ -117,11 +109,11 @@
           <span class="sel-icon">📋</span>
           <span class="sel-name" [title]="jdDisplayName()">{{ jdDisplayName() }}</span>
           <span class="sel-size">{{ jdDisplaySizeMb() }} MB</span>
-          <button class="sel-remove" type="button" *ngIf="!isProcessing()" (click)="removeJobDescription()"
+          <button class="sel-remove" type="button" *ngIf="!isProcessing() && !interviewGenerating()" (click)="removeJobDescription()"
             title="Remove job description" aria-label="Remove job description">✕</button>
         </div>
         <p class="jd-hint" *ngIf="jdAnalysis()">✓ Job description parsed and ready for ranking.</p>
-        <p class="jd-hint" *ngIf="!jdFile() && jdFileMeta()">Re-upload the JD file to generate a new interview.</p>
+        <p class="jd-hint" *ngIf="!jdFile() && jdFileMeta()">Re-upload the JD file so Analyse Resume can generate interview questions.</p>
       </ng-template>
     </div>
 
@@ -139,27 +131,21 @@
         <span class="sel-icon">📄</span>
         <span class="sel-name" [title]="task.fileName">{{ task.fileName }}</span>
         <span class="sel-size">{{ (task.fileSize / 1024 / 1024).toFixed(2) }} MB</span>
-        <button class="sel-remove" type="button" *ngIf="!isProcessing()" (click)="removeResume(task.id)" title="Remove"
+        <button class="sel-remove" type="button" *ngIf="!isProcessing() && !interviewGenerating()" (click)="removeResume(task.id)" title="Remove"
           aria-label="Remove">✕</button>
       </div>
     </div>
 
     <!-- ACTIONS -->
     <div class="upload-actions" *ngIf="tasks().length > 0">
-      <button class="upload-btn" type="button" [disabled]="isProcessing() || tasks().length === 0"
+      <button class="upload-btn" type="button"
+        [disabled]="isProcessing() || interviewGenerating() || tasks().length === 0"
         (click)="startProcessing()">
-        <span *ngIf="!isProcessing()">⚡ Analyze {{ tasks().length }} Resume(s)</span>
-        <span *ngIf="isProcessing()">🤖 Processing Resumes...</span>
-      </button>
-
-      <button class="interview-gen-btn" type="button"
-        [disabled]="!canGenerateInterview()"
-        (click)="generateInterview()"
-        [title]="!jdFile() ? 'Upload a Job Description to generate interview questions' : 'Generate AI interview questions from the Job Description, personalized with the uploaded resume'">
-        <span *ngIf="!interviewGenerating()">🎤 Generate Interview</span>
-        <span *ngIf="interviewGenerating()" class="btn-content">
+        <span *ngIf="!isProcessing() && !interviewGenerating()">⚡ Analyze {{ tasks().length }} Resume(s)</span>
+        <span *ngIf="isProcessing()">🤖 Analysing Resume...</span>
+        <span *ngIf="!isProcessing() && interviewGenerating()" class="btn-content">
           <span class="loader-sm"></span>
-          Generating Interview...
+          Generating Interview Questions...
         </span>
       </button>
 
@@ -175,15 +161,20 @@
     </div>
 
     <p class="interview-gen-hint" *ngIf="tasks().length > 0 && !hasJobDescription()">
-      Upload a Job Description above to enable interview question generation for the AI Interview Bot.
+      Upload a Job Description above — interview questions are generated automatically after Analyse Resume.
     </p>
     <p class="interview-gen-hint" *ngIf="tasks().length > 0 && hasJobDescription()">
-      Interview questions are generated primarily from the Job Description, then personalized using the uploaded resume (including skill-gap probes).
+      After Analyse Resume, interview questions are generated automatically from the Job Description and personalized per resume.
     </p>
   </div>
 
   <!-- OVERALL BATCH PROGRESS -->
-  <div *ngIf="showQueue() && overall().total > 0" class="overall-card" role="status" aria-live="polite">
+  <div
+    *ngIf="showQueue() && overall().total > 0"
+    id="section-results"
+    class="overall-card"
+    role="status"
+    aria-live="polite">
     <div class="overall-head">
       <div class="overall-title">
         <span class="overall-badge">Batch Progress</span>
@@ -222,8 +213,13 @@
     </div>
   </div>
 
-  <!-- RESUME QUEUE -->
-  <div *ngIf="showQueue()" class="queue">
+  <!-- RESUME QUEUE (analysis / scoring / podcast anchors) -->
+  <div
+    *ngIf="showQueue()"
+    id="section-analysis"
+    class="queue">
+    <div id="section-scoring" class="section-anchor" aria-hidden="true"></div>
+    <div id="section-podcast" class="section-anchor" aria-hidden="true"></div>
     <app-resume-card *ngFor="let task of tasks(); trackBy: trackByTask" [task]="task" [canRemove]="!isProcessing()"
       [downloadingReportId]="downloadingReportId()" (remove)="removeResume($event)"
       (downloadReport)="onDownloadReport($event)"
@@ -231,78 +227,108 @@
     </app-resume-card>
   </div>
 
-  <!-- CANDIDATE RANKING -->
-  <div *ngIf="rankingInProgress()" class="ranking-card ranking-loading" role="status" aria-live="polite">
-    <div class="ranking-head">
-      <span class="ranking-badge">Comparative Analysis</span>
-      <h2>Candidate Ranking</h2>
-    </div>
-    <p class="ranking-status">🏆 Comparing candidates against the Job Description...</p>
-  </div>
+  <!-- CANDIDATE RANKING (independent Waiting / Ready) -->
+  <div id="section-ranking" *ngIf="showRankingSection()">
+  <app-collapsible-section
+    title="Candidate Ranking"
+    badge="Comparative Analysis"
+    sectionId="candidate-ranking"
+    [waiting]="rankingInProgress()"
+    [ready]="!!candidateRanking()"
+    [error]="rankingError()"
+    [estimatedSeconds]="25">
+    <div *ngIf="candidateRanking() as ranking" class="ranking-body" role="region" aria-label="Candidate Ranking">
+      <p class="ranking-against" *ngIf="jdAnalysis()?.jobTitle">Against: {{ jdAnalysis()?.jobTitle }}</p>
 
-  <div *ngIf="rankingError()" class="error-card ranking-error">❌ {{ rankingError() }}</div>
-
-  <div *ngIf="interviewGenerating()" class="ranking-card ranking-loading" role="status" aria-live="polite">
-    <div class="ranking-head">
-      <span class="ranking-badge">Interview Generator</span>
-      <h2>Structured Interview</h2>
-    </div>
-    <p class="ranking-status">🎤 Building interview questions from the Job Description and resume...</p>
-  </div>
-
-  <div *ngIf="interviewError()" class="error-card ranking-error">❌ {{ interviewError() }}</div>
-
-  <app-interview-questions-card *ngIf="structuredInterview() as interview" [interview]="interview">
-  </app-interview-questions-card>
-
-  <app-interview-scheduler
-    *ngIf="structuredInterview() as interview"
-    [interview]="interview"
-    [analysis]="interviewAnalysis()"
-    [jdAnalysis]="interviewJdAnalysis()"
-    [resumeId]="schedulerResumeId()">
-  </app-interview-scheduler>
-
-  <div *ngIf="candidateRanking() as ranking" class="ranking-card" role="region" aria-label="Candidate Ranking">
-    <div class="ranking-head">
-      <span class="ranking-badge">Comparative Analysis</span>
-      <h2>Candidate Ranking</h2>
-      <p *ngIf="jdAnalysis()?.jobTitle">Against: {{ jdAnalysis()?.jobTitle }}</p>
-    </div>
-
-    <div class="ranking-list">
-      <div class="ranking-item" *ngFor="let entry of ranking.rankings; trackBy: trackByRank">
-        <div class="ranking-item-head">
-          <div class="ranking-rank">Rank {{ entry.rank }}</div>
-          <div class="ranking-meta">
-            <div class="ranking-name">{{ entry.candidateName }}</div>
-            <div class="ranking-score">Match Score: <strong>{{ entry.matchScore }}%</strong></div>
+      <div class="ranking-list">
+        <div class="ranking-item" *ngFor="let entry of ranking.rankings; trackBy: trackByRank">
+          <div class="ranking-item-head">
+            <div class="ranking-rank">Rank {{ entry.rank }}</div>
+            <div class="ranking-meta">
+              <div class="ranking-name">{{ entry.candidateName }}</div>
+              <div class="ranking-score">JD Match Score: <strong>{{ entry.matchScore }}%</strong></div>
+            </div>
+            <span [class]="'rec-badge ' + recommendationClass(entry.recommendation)">
+              {{ entry.recommendation }}
+            </span>
           </div>
-          <span [class]="'rec-badge ' + recommendationClass(entry.recommendation)">
-            {{ entry.recommendation }}
-          </span>
-        </div>
 
-        <div class="ranking-reason">
-          <h4>Reason</h4>
-          <p>{{ entry.reason }}</p>
-        </div>
+          <div class="ranking-reason">
+            <h4>Reason</h4>
+            <p>{{ entry.reason }}</p>
+          </div>
 
-        <div class="ranking-bullets strengths" *ngIf="entry.rank <= 2 && entry.strengths.length">
-          <h4>Strengths</h4>
-          <ul>
-            <li *ngFor="let item of entry.strengths">{{ item }}</li>
-          </ul>
-        </div>
+          <div class="ranking-bullets strengths" *ngIf="entry.rank <= 2 && entry.strengths.length">
+            <h4>Strengths</h4>
+            <ul>
+              <li *ngFor="let item of entry.strengths">{{ item }}</li>
+            </ul>
+          </div>
 
-        <div class="ranking-bullets weaknesses" *ngIf="entry.rank > 2 && entry.weaknesses.length">
-          <h4>Weaknesses</h4>
-          <ul>
-            <li *ngFor="let item of entry.weaknesses">{{ item }}</li>
-          </ul>
+          <div class="ranking-bullets weaknesses" *ngIf="entry.rank > 2 && entry.weaknesses.length">
+            <h4>Weaknesses</h4>
+            <ul>
+              <li *ngFor="let item of entry.weaknesses">{{ item }}</li>
+            </ul>
+          </div>
         </div>
       </div>
     </div>
+  </app-collapsible-section>
+  </div>
+
+  <!-- Per-candidate interview plans (independent Waiting / Ready) -->
+  <div
+    id="section-interview"
+    *ngIf="interviewSectionTasks().length > 0 || !!structuredInterview()">
+  <ng-container *ngFor="let task of interviewSectionTasks(); trackBy: trackByTask">
+    <app-collapsible-section
+      [title]="interviewSectionTitle(task)"
+      badge="Interview Questions"
+      [sectionId]="'interview-questions-' + task.id"
+      [waiting]="interviewSectionWaiting(task)"
+      [ready]="!!task.structuredInterview"
+      [error]="interviewSectionError(task)"
+      [estimatedSeconds]="35">
+      <app-interview-questions-card
+        *ngIf="asStructuredInterview(task.structuredInterview) as interview"
+        [interview]="interview"
+        [showHeader]="false">
+      </app-interview-questions-card>
+    </app-collapsible-section>
+  </ng-container>
+
+  <!-- Fallback: session-level interview from older sessions without per-task storage -->
+  <app-collapsible-section
+    *ngIf="!hasTaskInterviews() && !interviewGenerating() && structuredInterview() as interview"
+    title="Interview Questions"
+    badge="Interview Questions"
+    sectionId="interview-questions-session"
+    [waiting]="false"
+    [ready]="true"
+    [error]="interviewError()"
+    [estimatedSeconds]="35">
+    <app-interview-questions-card [interview]="interview" [showHeader]="false">
+    </app-interview-questions-card>
+  </app-collapsible-section>
+
+  <app-collapsible-section
+    *ngIf="structuredInterview() as interview"
+    title="Schedule Interview"
+    badge="Interview Scheduling"
+    sectionId="schedule-interview"
+    [waiting]="false"
+    [ready]="true"
+    [error]="null"
+    [estimatedSeconds]="10">
+    <app-interview-scheduler
+      [interview]="interview"
+      [analysis]="interviewAnalysis()"
+      [jdAnalysis]="interviewJdAnalysis()"
+      [resumeId]="schedulerResumeId()"
+      [showHeader]="false">
+    </app-interview-scheduler>
+  </app-collapsible-section>
   </div>
 
 </div>

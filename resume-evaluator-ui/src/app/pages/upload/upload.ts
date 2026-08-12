@@ -1,25 +1,54 @@
-import { Component, inject, OnInit, PLATFORM_ID, signal } from '@angular/core';
+import { Component, computed, inject, OnInit, PLATFORM_ID, signal } from '@angular/core';
 import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { RouterLink } from '@angular/router';
-import { HttpErrorResponse } from '@angular/common/http';
 import { ResumeQueueService } from '../../services/resume-queue';
-import { ResumeService } from '../../services/resume';
-import { ResumeTask, RankedCandidate } from '../../models';
+import { ResumeTask, RankedCandidate, StructuredInterview } from '../../models';
 import { ResumeCard } from '../../components/resume-card/resume-card';
 import { InterviewQuestionsCard } from '../../components/interview-questions-card/interview-questions-card';
 import { InterviewScheduler } from '../../components/interview-scheduler/interview-scheduler';
-import { extractApiErrorMessage } from '../../utils/api-error';
+import { CollapsibleSection } from '../../components/collapsible-section/collapsible-section';
+import { ToastService } from '../../services/toast';
+
+/** Feature-card navigation targets that map to on-page result sections. */
+export type FeatureSection =
+  | 'analysis'
+  | 'interview'
+  | 'scoring'
+  | 'ranking'
+  | 'podcast';
+
+interface FeatureCardDef {
+  section: FeatureSection;
+  icon: string;
+  title: string;
+  description: string;
+}
+
+const FEATURE_SECTION_IDS: Record<FeatureSection, string> = {
+  analysis: 'section-analysis',
+  interview: 'section-interview',
+  scoring: 'section-scoring',
+  ranking: 'section-ranking',
+  podcast: 'section-podcast',
+};
 
 @Component({
   selector: 'app-upload',
   standalone: true,
-  imports: [CommonModule, RouterLink, ResumeCard, InterviewQuestionsCard, InterviewScheduler],
+  imports: [
+    CommonModule,
+    RouterLink,
+    ResumeCard,
+    InterviewQuestionsCard,
+    InterviewScheduler,
+    CollapsibleSection,
+  ],
   templateUrl: './upload.html',
   styleUrl: './upload.css',
 })
 export class Upload implements OnInit {
   private readonly queue = inject(ResumeQueueService);
-  private readonly resumeService = inject(ResumeService);
+  private readonly toast = inject(ToastService);
   private readonly platformId = inject(PLATFORM_ID);
 
   protected readonly tasks = this.queue.tasks;
@@ -45,6 +74,50 @@ export class Upload implements OnInit {
   protected readonly isDragOver = signal(false);
   protected readonly error = signal<string | null>(null);
   protected readonly isDarkMode = signal(true);
+  protected readonly activeSection = signal<FeatureSection | null>(null);
+
+  /** True when at least one resume has finished with usable analysis results. */
+  protected readonly isAnalysisComplete = computed(() => {
+    if (this.isProcessing()) {
+      return false;
+    }
+    return this.tasks().some(
+      (t) => t.status === 'completed' && !!t.result?.analysis
+    );
+  });
+
+  protected readonly featureCards: FeatureCardDef[] = [
+    {
+      section: 'analysis',
+      icon: '📄',
+      title: 'Resume Analysis',
+      description: 'AI extracts skills, experience and strengths instantly.',
+    },
+    {
+      section: 'interview',
+      icon: '🎤',
+      title: 'Interview Generator',
+      description: 'Build a structured 25-minute interview from the Job Description.',
+    },
+    {
+      section: 'scoring',
+      icon: '📊',
+      title: 'Candidate Scoring',
+      description: 'Evaluate candidates using structured AI metrics.',
+    },
+    {
+      section: 'ranking',
+      icon: '🏆',
+      title: 'Candidate Ranking',
+      description: 'Compare multiple candidates against a Job Description and rank by fit.',
+    },
+    {
+      section: 'podcast',
+      icon: '🎧',
+      title: 'Podcast Creation',
+      description: 'Convert interviews into engaging audio reports.',
+    },
+  ];
 
   ngOnInit(): void {
     if (isPlatformBrowser(this.platformId)) {
@@ -64,6 +137,55 @@ export class Upload implements OnInit {
       localStorage.setItem('theme', newIsDark ? 'dark' : 'light');
       this.applyTheme(newIsDark);
     }
+  }
+
+  protected onCardClick(section: FeatureSection): void {
+    if (!this.isAnalysisComplete()) {
+      this.toast.show('Complete resume analysis first to unlock these features.', 'info', 3500);
+      return;
+    }
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
+
+    this.activeSection.set(section);
+    const el = this.resolveSectionElement(section);
+    if (!el) {
+      this.toast.show('That section is not available yet for this session.', 'info', 3500);
+      return;
+    }
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  protected onCardKeydown(event: KeyboardEvent, section: FeatureSection): void {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      this.onCardClick(section);
+    }
+  }
+
+  private resolveSectionElement(section: FeatureSection): HTMLElement | null {
+    const primaryId = FEATURE_SECTION_IDS[section];
+    const primary = document.getElementById(primaryId);
+    if (primary) {
+      return primary;
+    }
+
+    // Fallbacks when a dedicated wrapper is absent but related content exists.
+    if (section === 'interview') {
+      return (
+        document.getElementById('section-interview') ||
+        document.querySelector<HTMLElement>('[id^="interview-questions-"]') ||
+        document.getElementById('schedule-interview')
+      );
+    }
+    if (section === 'ranking') {
+      return document.getElementById('candidate-ranking');
+    }
+    if (section === 'analysis' || section === 'scoring' || section === 'podcast') {
+      return document.getElementById('section-results');
+    }
+    return null;
   }
 
   private applyTheme(isDark: boolean): void {
@@ -96,7 +218,7 @@ export class Upload implements OnInit {
   protected onDragOver(event: DragEvent): void {
     event.preventDefault();
     event.stopPropagation();
-    if (!this.isProcessing()) {
+    if (!this.isProcessing() && !this.interviewGenerating()) {
       this.isDragOver.set(true);
     }
   }
@@ -120,7 +242,7 @@ export class Upload implements OnInit {
     if (target?.closest('label') || target?.tagName === 'INPUT') {
       return;
     }
-    if (!this.isProcessing() && this.tasks().length < this.maxFiles) {
+    if (!this.isProcessing() && !this.interviewGenerating() && this.tasks().length < this.maxFiles) {
       const input = document.querySelector('input[type="file"]') as HTMLInputElement | null;
       input?.click();
     }
@@ -148,48 +270,7 @@ export class Upload implements OnInit {
   protected clearResults(): void {
     this.queue.clearResults();
     this.error.set(null);
-  }
-
-  protected canGenerateInterview(): boolean {
-    return !this.isProcessing()
-      && !this.interviewGenerating()
-      && !!this.jdFile();
-  }
-
-  protected generateInterview(): void {
-    const resumeTask = this.tasks()[0];
-    const jd = this.jdFile();
-
-    if (!jd) {
-      this.queue.setInterviewError('Job description file is required to generate an interview.');
-      return;
-    }
-
-    this.queue.setInterviewError(null);
-    this.queue.setInterviewResult(null, null, null);
-    this.queue.setInterviewGenerating(true);
-
-    // JD-primary interview plan; first uploaded resume personalizes questions + gap analysis.
-    this.resumeService.generateInterview(jd, resumeTask?.file ?? null).subscribe({
-      next: (result) => {
-        this.queue.setInterviewGenerating(false);
-        if (result?.success && result.interview) {
-          this.queue.setInterviewResult(
-            result.interview,
-            result.analysis || null,
-            result.jdAnalysis || this.jdAnalysis() || null
-          );
-        } else {
-          this.queue.setInterviewError(result?.error || result?.message || 'Failed to generate interview.');
-        }
-      },
-      error: (err: HttpErrorResponse) => {
-        this.queue.setInterviewGenerating(false);
-        this.queue.setInterviewError(
-          extractApiErrorMessage(err, 'Failed to generate interview.')
-        );
-      },
-    });
+    this.activeSection.set(null);
   }
 
   protected onDownloadReport(task: ResumeTask): void {
@@ -233,7 +314,70 @@ export class Upload implements OnInit {
     return (size / 1024 / 1024).toFixed(2);
   }
 
+  /** Tasks that have a per-candidate structured interview question bank. */
+  protected tasksWithInterview(): ResumeTask[] {
+    return this.tasks().filter((t) => !!t.structuredInterview);
+  }
+
+  /** True when at least one task carries its own interview plan (multi-resume path). */
+  protected hasTaskInterviews(): boolean {
+    return this.tasksWithInterview().length > 0;
+  }
+
+  /** Ranking section appears while ranking runs, succeeds, or fails. */
+  protected showRankingSection(): boolean {
+    return this.rankingInProgress() || !!this.candidateRanking() || !!this.rankingError();
+  }
+
+  /**
+   * Per-candidate interview shells: shown while generating or once a result/error exists.
+   * Keeps candidates independent so one ready interview is viewable while others wait.
+   */
+  protected interviewSectionTasks(): ResumeTask[] {
+    if (!this.hasJobDescription() && !this.interviewGenerating()) {
+      // Still show tasks that already have interview data (e.g. session restore).
+      return this.tasks().filter((t) => !!t.structuredInterview || !!t.interviewGenError);
+    }
+    return this.tasks().filter(
+      (t) =>
+        t.status === 'completed' &&
+        !!t.result &&
+        (this.interviewGenerating() || !!t.structuredInterview || !!t.interviewGenError)
+    );
+  }
+
+  protected interviewSectionTitle(task: ResumeTask): string {
+    const name = this.candidateInterviewLabel(task);
+    return this.interviewSectionTasks().length > 1
+      ? `Interview Questions — ${name}`
+      : 'Interview Questions';
+  }
+
+  protected interviewSectionWaiting(task: ResumeTask): boolean {
+    return this.interviewGenerating() && !task.structuredInterview && !task.interviewGenError;
+  }
+
+  protected interviewSectionError(task: ResumeTask): string | null {
+    return task.interviewGenError || null;
+  }
+
+  protected candidateInterviewLabel(task: ResumeTask): string {
+    return task.result?.analysis?.candidateName || task.fileName;
+  }
+
+  protected asStructuredInterview(value: StructuredInterview | null | undefined): StructuredInterview | null {
+    return value ?? null;
+  }
+
   protected schedulerResumeId(): string | null {
+    const fromQueue = this.queue.interviewResumeId();
+    if (fromQueue) {
+      return fromQueue;
+    }
+    const owner = this.tasks().find((t) => !!t.structuredInterview);
+    if (owner) {
+      return owner.resumeId || owner.uploadId || null;
+    }
     const task = this.tasks()[0];
     return task?.resumeId || task?.uploadId || null;
   }

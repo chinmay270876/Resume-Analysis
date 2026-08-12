@@ -3,6 +3,14 @@
   animation: fadeInUp 0.5s ease 0.1s both;
 }
 
+.evaluation-card.as-embedded {
+  padding: 8px 0 0;
+  animation: none;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
 .section-header {
   margin-bottom: 24px;
 }

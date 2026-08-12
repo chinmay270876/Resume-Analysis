@@ -13,6 +13,8 @@ const RING_CIRCUMFERENCE = 2 * Math.PI * 52;
 })
 export class EvaluationCard {
   @Input() evaluation: Evaluation | null = null;
+  /** When false, the card omits its own h2 (parent collapsible section supplies the title). */
+  @Input() showHeader = true;
   @Input() ats: {
     atsScore: number | null;
     atsGrade: string;

@@ -3,6 +3,14 @@
   animation: fadeInUp 0.5s ease both;
 }
 
+.analysis-card.as-embedded {
+  padding: 8px 0 0;
+  animation: none;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
 .analysis-card:nth-child(2) { animation-delay: 0.08s; }
 
 .section-header {
