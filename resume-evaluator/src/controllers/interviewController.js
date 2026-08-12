@@ -1,3 +1,4 @@
+const { performance } = require("perf_hooks");
 const interviewService = require("../services/interviewService");
 const { sendScheduledInterviewInvite } = require("../services/emailService");
 const { processReminders } = require("../services/interviewReminderService");
@@ -6,37 +7,82 @@ const { generateInterviewSummaryExcel } = require("../services/excelService");
 const { INTERVIEW_STATUSES } = require("../models/interviewStatuses");
 
 /**
+ * Fire-and-forget invitation email so HTTP responses are not blocked by SMTP
+ * (verify + sendMailWithRetry can take several seconds, especially on retries).
+ */
+function queueInvitationEmail(interview, reason = "create") {
+    const interviewId = interview?.id || "unknown";
+    setImmediate(() => {
+        const emailStarted = performance.now();
+        Promise.resolve()
+            .then(async () => {
+                console.log(
+                    `[Interview][${reason}] background invitation email starting for ${interviewId}`
+                );
+                const emailResult = await sendScheduledInterviewInvite(interview);
+                if (emailResult?.success) {
+                    await interviewService.markInvitationSent(interviewId);
+                } else if (emailResult?.skipped) {
+                    console.warn(
+                        `[Interview][${reason}] invitation email skipped for ${interviewId}:`,
+                        emailResult.reason || "skipped"
+                    );
+                }
+                console.log(
+                    `[Interview][${reason}] background invitation email finished for ${interviewId} in ${(
+                        performance.now() - emailStarted
+                    ).toFixed(1)}ms`,
+                    { success: !!emailResult?.success, skipped: !!emailResult?.skipped }
+                );
+            })
+            .catch((emailErr) => {
+                console.error(
+                    `[Interview][${reason}] invitation email failed for ${interviewId} after ${(
+                        performance.now() - emailStarted
+                    ).toFixed(1)}ms:`,
+                    emailErr.message
+                );
+            });
+    });
+}
+
+/**
  * POST /api/interviews
- * Create a scheduled (or draft) interview and optionally send the invitation email.
+ * Create a scheduled (or draft) interview and queue the invitation email in the background.
  */
 exports.createInterview = async (req, res, next) => {
+    const requestStarted = performance.now();
     try {
+        const persistStarted = performance.now();
         const interview = await interviewService.createInterview(req.body || {});
+        const persistMs = performance.now() - persistStarted;
 
         let emailResult = null;
         if (
             interview.status === INTERVIEW_STATUSES.SCHEDULED ||
             interview.status === INTERVIEW_STATUSES.REMINDER_SENT
         ) {
-            try {
-                emailResult = await sendScheduledInterviewInvite(interview);
-                if (emailResult?.success) {
-                    await interviewService.markInvitationSent(interview.id);
-                    interview.invitationSent = true;
-                    interview.invitationSentAt = new Date().toISOString();
-                }
-            } catch (emailErr) {
-                console.error("⚠️ Invitation email failed (interview still created):", emailErr.message);
-                emailResult = { success: false, error: emailErr.message };
-            }
+            // Return immediately after DB write; SMTP/email runs asynchronously.
+            queueInvitationEmail(interview, "create");
+            emailResult = { queued: true };
         }
+
+        const totalMs = performance.now() - requestStarted;
+        console.log(
+            `[Interview][create] request completed in ${totalMs.toFixed(1)}ms ` +
+                `(persist=${persistMs.toFixed(1)}ms, emailQueued=${!!emailResult?.queued})`
+        );
 
         return res.status(201).json({
             success: true,
-            interview: await interviewService.getInterview(interview.id),
+            interview,
             email: emailResult,
         });
     } catch (error) {
+        console.error(
+            `[Interview][create] request failed after ${(performance.now() - requestStarted).toFixed(1)}ms:`,
+            error.message
+        );
         next(error);
     }
 };
@@ -244,9 +290,12 @@ exports.getInterview = async (req, res, next) => {
  * PATCH /api/interviews/:id
  */
 exports.updateInterview = async (req, res, next) => {
+    const requestStarted = performance.now();
     try {
         const previous = await interviewService.getInterview(req.params.id);
+        const persistStarted = performance.now();
         const interview = await interviewService.updateInterview(req.params.id, req.body || {});
+        const persistMs = performance.now() - persistStarted;
 
         let emailResult = null;
         const becameScheduled =
@@ -261,23 +310,26 @@ exports.updateInterview = async (req, res, next) => {
                 previous.durationMinutes !== interview.durationMinutes);
 
         if (becameScheduled || scheduleChanged) {
-            try {
-                emailResult = await sendScheduledInterviewInvite(interview);
-                if (emailResult?.success) {
-                    await interviewService.markInvitationSent(interview.id);
-                }
-            } catch (emailErr) {
-                console.error("⚠️ Invitation email failed on update:", emailErr.message);
-                emailResult = { success: false, error: emailErr.message };
-            }
+            queueInvitationEmail(interview, "update");
+            emailResult = { queued: true };
         }
+
+        const totalMs = performance.now() - requestStarted;
+        console.log(
+            `[Interview][update] request completed in ${totalMs.toFixed(1)}ms ` +
+                `(persist=${persistMs.toFixed(1)}ms, emailQueued=${!!emailResult?.queued})`
+        );
 
         return res.status(200).json({
             success: true,
-            interview: await interviewService.getInterview(interview.id),
+            interview,
             email: emailResult,
         });
     } catch (error) {
+        console.error(
+            `[Interview][update] request failed after ${(performance.now() - requestStarted).toFixed(1)}ms:`,
+            error.message
+        );
         next(error);
     }
 };

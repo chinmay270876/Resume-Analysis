@@ -1,3 +1,4 @@
+const { performance } = require("perf_hooks");
 const nodemailer = require("nodemailer");
 const { escapeHtml, sanitizeHttpUrl } = require("../utils/htmlEscape");
 
@@ -299,6 +300,7 @@ async function sendInterviewInvite(candidateName, candidateEmail, atsEvaluation)
  * Reuses the existing Nodemailer transporter / credential configuration.
  */
 async function sendScheduledInterviewInvite(interview) {
+    const overallStarted = performance.now();
     const candidateEmail = interview?.candidateEmail;
     if (!isValidEmail(candidateEmail)) {
         console.warn(
@@ -310,7 +312,9 @@ async function sendScheduledInterviewInvite(interview) {
     }
 
     try {
+        const verifyStarted = performance.now();
         await ensureTransporterVerified();
+        const verifyMs = performance.now() - verifyStarted;
 
         const safeName = escapeHtml(
             typeof interview.candidateName === "string" && interview.candidateName.trim()
@@ -331,6 +335,7 @@ async function sendScheduledInterviewInvite(interview) {
         console.log(`📧 Sending scheduled interview invite to ${candidateEmail}`);
 
         const { EMAIL_USER } = getEmailCredentials();
+        const sendStarted = performance.now();
         const info = await sendMailWithRetry(
             {
                 from: EMAIL_USER,
@@ -402,13 +407,21 @@ async function sendScheduledInterviewInvite(interview) {
             },
             "Scheduled Invite"
         );
+        const sendMs = performance.now() - sendStarted;
 
         console.log(
             `✅ Scheduled interview invitation sent to ${candidateEmail}. MessageId: ${info.messageId}`
         );
+        console.log(
+            `[Email] Scheduled Invite timing: verify=${verifyMs.toFixed(1)}ms ` +
+                `send=${sendMs.toFixed(1)}ms total=${(performance.now() - overallStarted).toFixed(1)}ms`
+        );
         return { success: true, messageId: info.messageId, response: info.response };
     } catch (error) {
-        console.error("❌ Scheduled Interview Email Error:", error.message);
+        console.error(
+            `❌ Scheduled Interview Email Error after ${(performance.now() - overallStarted).toFixed(1)}ms:`,
+            error.message
+        );
         if (error.stack) console.error(error.stack);
         throw error;
     }
