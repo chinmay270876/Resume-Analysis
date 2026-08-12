@@ -15,6 +15,7 @@
     "node": ">=24.15.0"
   },
   "dependencies": {
+    "@100mslive/hms-video-store": "^0.14.6",
     "@angular/common": "^22.0.0",
     "@angular/compiler": "^22.0.0",
     "@angular/core": "^22.0.0",

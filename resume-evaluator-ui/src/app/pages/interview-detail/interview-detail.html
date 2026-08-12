@@ -44,23 +44,29 @@
       </button>
     </div>
 
-    <!-- Join Interview / Voice AI readiness (no fake interview) -->
+    <!-- Candidate room entry (100ms) -->
     <section
       class="detail-card join-card"
       [class.highlight]="highlightJoin()"
       [ngClass]="joinStateClass(item.joinState?.state)"
       id="join-interview">
-      <h2>Join Interview</h2>
+      <h2>Candidate Interview Room</h2>
       <div class="join-body">
         <div class="join-status">
           <strong>{{ item.joinState?.label || 'Interview Ready' }}</strong>
           <p>{{ item.joinState?.message || 'Waiting for scheduled time' }}</p>
         </div>
         <p class="join-note">
-          Voice AI Interview Agent integration point — the agent will join the meeting,
-          ask interview questions, listen to the candidate, and produce transcript,
-          recording, and evaluation after the session ends.
+          Candidates join a full-window 100ms audio/video room at the meeting link below.
+          Responses and speech transcripts are captured per question.
         </p>
+        <a
+          class="action-btn primary"
+          [href]="'/candidate-interview/' + item.id"
+          target="_blank"
+          rel="noopener noreferrer">
+          Open Candidate Interview
+        </a>
       </div>
     </section>
 
@@ -114,14 +120,14 @@
           <strong [ngClass]="resultClass(item.result)">{{ item.result || 'Pending' }}</strong>
         </div>
         <div class="full">
-          <span>Meeting Link</span>
+          <span>MEETING LINK</span>
           <strong>
             <a
-              *ngIf="safeMeetingHref(item.meetingLink) as href"
+              *ngIf="candidateMeetingHref(item) as href"
               [href]="href"
               target="_blank"
-              rel="noopener noreferrer">{{ item.meetingLink }}</a>
-            <span *ngIf="!safeMeetingHref(item.meetingLink)">{{ item.meetingLink || '—' }}</span>
+              rel="noopener noreferrer">{{ href }}</a>
+            <span *ngIf="!candidateMeetingHref(item)">—</span>
           </strong>
         </div>
       </div>
@@ -184,10 +190,35 @@
       </div>
     </section>
 
-    <app-interview-questions-card
-      *ngIf="asStructuredInterview(item.interviewJson) as structured"
-      [interview]="structured">
-    </app-interview-questions-card>
+    <!-- Recruiter: candidate responses & transcripts (after completion) -->
+    <section class="detail-card" id="candidate-responses">
+      <h2>Candidate Responses &amp; Transcripts</h2>
+      <ng-container *ngIf="isCompleted(item) && hasCandidateAnswers(item); else responsesPending">
+        <div class="response-list">
+          <article class="response-item" *ngFor="let answer of candidateAnswers(item)">
+            <header>
+              <span class="response-qno">Q{{ answer.questionNo }}</span>
+              <span class="response-time" *ngIf="answer.answeredAt">
+                {{ answer.answeredAt | date: 'medium' }}
+              </span>
+            </header>
+            <p class="response-question" *ngIf="answer.question">{{ answer.question }}</p>
+            <p class="response-transcript">
+              {{ answer.transcript || 'No transcript captured for this question.' }}
+            </p>
+          </article>
+        </div>
+      </ng-container>
+      <ng-template #responsesPending>
+        <p class="responses-empty">
+          {{
+            isCompleted(item)
+              ? 'Interview completed — no per-question transcripts were recorded.'
+              : 'Responses appear here after the candidate finishes the live interview.'
+          }}
+        </p>
+      </ng-template>
+    </section>
 
     <!-- Podcast Transcript — only from the real completed Voice AI session -->
     <app-podcast-transcript-card

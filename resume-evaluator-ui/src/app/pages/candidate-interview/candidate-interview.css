@@ -1,0 +1,344 @@
+:host {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.ci-shell {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  color: var(--color-text);
+  background:
+    radial-gradient(ellipse 80% 50% at 20% -10%, rgba(6, 182, 212, 0.18), transparent 55%),
+    radial-gradient(ellipse 70% 45% at 90% 110%, rgba(37, 99, 235, 0.16), transparent 50%),
+    linear-gradient(160deg, #05070d 0%, #0a0f1a 45%, #070b14 100%);
+  font-family: "Segoe UI", "Avenir Next", "Trebuchet MS", sans-serif;
+  overflow: hidden;
+}
+
+.ci-glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(90px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.ci-glow-a {
+  width: 420px;
+  height: 420px;
+  background: #06b6d4;
+  opacity: 0.22;
+  top: -120px;
+  left: -80px;
+  animation: ciFloat 12s ease-in-out infinite;
+}
+
+.ci-glow-b {
+  width: 480px;
+  height: 480px;
+  background: #2563eb;
+  opacity: 0.18;
+  bottom: -160px;
+  right: -100px;
+  animation: ciFloat 14s ease-in-out infinite reverse;
+}
+
+@keyframes ciFloat {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  50% {
+    transform: translate(24px, 18px);
+  }
+}
+
+.ci-topbar,
+.ci-stage,
+.ci-controls,
+.ci-state,
+.ci-error,
+.ci-complete {
+  position: relative;
+  z-index: 1;
+}
+
+.ci-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 28px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  backdrop-filter: blur(12px);
+}
+
+.ci-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ci-brand-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #031018;
+  background: linear-gradient(135deg, #06b6d4, #2563eb);
+}
+
+.ci-brand strong {
+  display: block;
+  font-size: 1rem;
+}
+
+.ci-brand p {
+  margin: 2px 0 0;
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+}
+
+.ci-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(15, 23, 42, 0.55);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ci-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #94a3b8;
+  animation: ciPulse 1.6s ease-in-out infinite;
+}
+
+.ci-status.is-live .ci-status-dot {
+  background: #22c55e;
+}
+
+.ci-status.is-done .ci-status-dot {
+  background: #38bdf8;
+  animation: none;
+}
+
+.ci-status.is-error .ci-status-dot {
+  background: #ef4444;
+  animation: none;
+}
+
+@keyframes ciPulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.85);
+  }
+}
+
+.ci-stage {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 32px 24px 24px;
+  max-width: 920px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.ci-progress {
+  margin: 0 0 12px;
+  color: #67e8f9;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ci-question {
+  margin: 0;
+  font-size: clamp(1.45rem, 3.2vw, 2.35rem);
+  line-height: 1.35;
+  font-weight: 700;
+  max-width: 18ch;
+  width: 100%;
+  max-width: 42rem;
+}
+
+.ci-waveform {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 6px;
+  height: 72px;
+  margin-top: 36px;
+}
+
+.ci-wave-bar {
+  width: 6px;
+  min-height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #67e8f9, #2563eb);
+  transition: height 0.12s ease;
+  animation: ciWave 1.1s ease-in-out infinite;
+}
+
+@keyframes ciWave {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.ci-transcript {
+  margin-top: 28px;
+  width: min(640px, 100%);
+  text-align: left;
+  padding: 16px 18px;
+  border-radius: 16px;
+  border: 1px solid rgba(6, 182, 212, 0.22);
+  background: rgba(2, 8, 20, 0.55);
+}
+
+.ci-transcript-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  margin-bottom: 8px;
+}
+
+.ci-transcript p {
+  margin: 0;
+  color: var(--color-text);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.ci-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  padding: 20px 24px 28px;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgba(2, 6, 14, 0.45);
+  backdrop-filter: blur(10px);
+}
+
+.ci-ctrl {
+  min-width: 132px;
+  padding: 12px 18px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(15, 23, 42, 0.8);
+  color: var(--color-text);
+  font-weight: 700;
+  font-size: 0.92rem;
+  cursor: pointer;
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+.ci-ctrl:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgba(6, 182, 212, 0.55);
+}
+
+.ci-ctrl:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.ci-ctrl.primary {
+  border: none;
+  background: linear-gradient(135deg, #06b6d4, #2563eb);
+  color: #031018;
+  box-shadow: 0 10px 28px rgba(6, 182, 212, 0.28);
+}
+
+.ci-ctrl.danger {
+  border-color: rgba(239, 68, 68, 0.45);
+  color: #fecaca;
+}
+
+.ci-ctrl.is-off {
+  border-color: rgba(249, 115, 22, 0.55);
+  color: #fdba74;
+}
+
+.ci-state,
+.ci-error,
+.ci-complete {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  padding: 40px 24px;
+}
+
+.ci-error {
+  color: #fecaca;
+  align-content: start;
+  padding-top: 12px;
+}
+
+.ci-complete h1 {
+  margin: 0 0 12px;
+  font-size: clamp(1.8rem, 4vw, 2.6rem);
+}
+
+.ci-complete p {
+  margin: 0;
+  color: var(--color-text-secondary);
+  max-width: 36rem;
+}
+
+.ci-complete-note {
+  margin-top: 16px !important;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 640px) {
+  .ci-topbar {
+    padding: 16px;
+  }
+
+  .ci-controls {
+    padding-bottom: 20px;
+  }
+
+  .ci-ctrl {
+    flex: 1 1 calc(50% - 8px);
+  }
+
+  .ci-ctrl.primary {
+    flex: 1 1 100%;
+  }
+}

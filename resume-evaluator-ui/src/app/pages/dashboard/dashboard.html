@@ -365,8 +365,9 @@
           <a
             *ngIf="canAct(interview)"
             class="action-btn join"
-            [routerLink]="['/interviews', interview.id]"
-            [queryParams]="{ join: 1 }">
+            [href]="'/candidate-interview/' + interview.id"
+            target="_blank"
+            rel="noopener noreferrer">
             Join Interview
           </a>
           <a

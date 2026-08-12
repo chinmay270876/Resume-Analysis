@@ -7,6 +7,8 @@ import {
   CompleteInterviewPayload,
   CompleteInterviewResult,
   CreateInterviewPayload,
+  InterviewAnswersResult,
+  InterviewAnswerEntry,
   InterviewCompareResult,
   InterviewDetailResult,
   InterviewListFilter,
@@ -15,6 +17,7 @@ import {
   InterviewSortBy,
   InterviewSortDir,
   InterviewStatsResult,
+  InterviewTokenResult,
   PodcastTranscriptResult,
 } from '../models';
 import { extractApiErrorMessage } from '../utils/api-error';
@@ -100,6 +103,42 @@ export class InterviewService {
     return this.http
       .get<InterviewDetailResult>(`${this.apiBase}/api/interviews/${encodeURIComponent(id)}`)
       .pipe(catchError(this.handleError));
+  }
+
+  /** Public candidate endpoint — 100ms auth token + interview questions payload. */
+  getInterviewToken(id: string): Observable<InterviewTokenResult> {
+    return this.http
+      .post<InterviewTokenResult>(
+        `${this.apiBase}/api/interviews/${encodeURIComponent(id)}/token`,
+        {}
+      )
+      .pipe(catchError(this.handleError));
+  }
+
+  /** Public candidate endpoint — persist per-question transcripts. */
+  saveInterviewAnswers(
+    id: string,
+    payload: {
+      answers?: InterviewAnswerEntry[];
+      answer?: InterviewAnswerEntry;
+      questionNo?: number;
+      question?: string;
+      transcript?: string;
+      completed?: boolean;
+      finish?: boolean;
+    }
+  ): Observable<InterviewAnswersResult> {
+    return this.http
+      .post<InterviewAnswersResult>(
+        `${this.apiBase}/api/interviews/${encodeURIComponent(id)}/answers`,
+        payload
+      )
+      .pipe(catchError(this.handleError));
+  }
+
+  /** Canonical candidate room URL path (relative). */
+  candidateInterviewPath(id: string): string[] {
+    return ['/candidate-interview', id];
   }
 
   updateInterview(

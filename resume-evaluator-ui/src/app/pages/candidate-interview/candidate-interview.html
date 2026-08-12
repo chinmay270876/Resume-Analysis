@@ -1,0 +1,85 @@
+<div class="ci-shell" role="main" aria-label="Candidate Interview">
+  <div class="ci-glow ci-glow-a" aria-hidden="true"></div>
+  <div class="ci-glow ci-glow-b" aria-hidden="true"></div>
+
+  <header class="ci-topbar">
+    <div class="ci-brand">
+      <span class="ci-brand-mark">RA</span>
+      <div>
+        <strong>Candidate Interview</strong>
+        <p>{{ candidateName() }}</p>
+      </div>
+    </div>
+    <div
+      class="ci-status"
+      [class.is-live]="connectionStatus() === 'Live'"
+      [class.is-done]="connectionStatus() === 'Completed'"
+      [class.is-error]="connectionStatus() === 'Error'">
+      <span class="ci-status-dot" aria-hidden="true"></span>
+      {{ connectionStatus() }}
+    </div>
+  </header>
+
+  <div *ngIf="loading()" class="ci-state">Connecting to your interview room…</div>
+  <div *ngIf="error()" class="ci-error">{{ error() }}</div>
+
+  <ng-container *ngIf="!loading() && connectionStatus() !== 'Completed'">
+    <section class="ci-stage">
+      <p class="ci-progress">{{ questionProgressLabel }}</p>
+      <h1 class="ci-question" *ngIf="currentQuestion as q; else noQuestions">
+        {{ q.question }}
+      </h1>
+      <ng-template #noQuestions>
+        <h1 class="ci-question">Waiting for interview questions…</h1>
+      </ng-template>
+
+      <div class="ci-waveform" aria-hidden="true">
+        <span
+          *ngFor="let h of waveformBars(); let i = index"
+          class="ci-wave-bar"
+          [style.height.px]="h"
+          [style.animationDelay.ms]="i * 70"></span>
+      </div>
+
+      <div class="ci-transcript" *ngIf="liveTranscript() || listening()">
+        <span class="ci-transcript-label">
+          {{ listening() ? 'Listening…' : 'Your answer' }}
+        </span>
+        <p>{{ liveTranscript() || 'Speak your answer — it will be transcribed automatically.' }}</p>
+      </div>
+    </section>
+
+    <footer class="ci-controls">
+      <button
+        type="button"
+        class="ci-ctrl"
+        [class.is-off]="!micEnabled()"
+        (click)="toggleMic()"
+        [attr.aria-pressed]="!micEnabled()">
+        {{ micEnabled() ? 'Mute Mic' : 'Unmute Mic' }}
+      </button>
+
+      <button
+        type="button"
+        class="ci-ctrl primary"
+        [disabled]="saving() || !currentQuestion"
+        (click)="submitCurrentAnswer(true)">
+        {{
+          currentIndex() + 1 >= questions().length
+            ? (saving() ? 'Finishing…' : 'Submit & Finish')
+            : (saving() ? 'Saving…' : 'Next Question')
+        }}
+      </button>
+
+      <button type="button" class="ci-ctrl danger" [disabled]="saving()" (click)="endCall()">
+        End Call
+      </button>
+    </footer>
+  </ng-container>
+
+  <section *ngIf="connectionStatus() === 'Completed'" class="ci-complete">
+    <h1>Interview Completed</h1>
+    <p>Thank you, {{ candidateName() }}. Your responses have been submitted.</p>
+    <p class="ci-complete-note">You can safely close this window.</p>
+  </section>
+</div>

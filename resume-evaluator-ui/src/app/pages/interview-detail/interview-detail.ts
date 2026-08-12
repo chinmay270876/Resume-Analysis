@@ -8,6 +8,7 @@ import { distinctUntilChanged, map } from 'rxjs/operators';
 import {
   Analysis,
   COMMON_TIMEZONES,
+  InterviewAnswerEntry,
   InterviewEvaluation,
   JdAnalysis,
   ScheduledInterview,
@@ -16,7 +17,6 @@ import {
 import { InterviewService } from '../../services/interview';
 import { ToastService } from '../../services/toast';
 import { extractApiErrorMessage } from '../../utils/api-error';
-import { InterviewQuestionsCard } from '../../components/interview-questions-card/interview-questions-card';
 import { PodcastTranscriptCard } from '../../components/podcast-transcript-card/podcast-transcript-card';
 import { InterviewEvaluationCard } from '../../components/interview-evaluation-card/interview-evaluation-card';
 import { InterviewResultCard } from '../../components/interview-result-card/interview-result-card';
@@ -35,7 +35,6 @@ const POST_COMPLETION_STATUSES = new Set([
     CommonModule,
     FormsModule,
     RouterLink,
-    InterviewQuestionsCard,
     PodcastTranscriptCard,
     InterviewEvaluationCard,
     InterviewResultCard,
@@ -136,6 +135,27 @@ export class InterviewDetail implements OnInit, OnDestroy {
       // invalid URL
     }
     return null;
+  }
+
+  /** Prefer /candidate-interview/:id for displayed meeting links. */
+  protected candidateMeetingHref(item: ScheduledInterview): string | null {
+    const raw = this.safeMeetingHref(item.meetingLink);
+    if (raw) {
+      return raw.replace(/\/interviews\/([^/?#]+)/, '/candidate-interview/$1');
+    }
+    if (typeof window !== 'undefined' && item.id) {
+      return `${window.location.origin}/candidate-interview/${item.id}`;
+    }
+    return null;
+  }
+
+  protected candidateAnswers(item: ScheduledInterview): InterviewAnswerEntry[] {
+    const answers = item.interviewDetails?.answers;
+    return Array.isArray(answers) ? answers : [];
+  }
+
+  protected hasCandidateAnswers(item: ScheduledInterview): boolean {
+    return this.candidateAnswers(item).length > 0;
   }
 
   protected transcriptDownloadHref(id: string, format: 'txt' | 'pdf'): string {

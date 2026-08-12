@@ -6,6 +6,10 @@ export const serverRoutes: ServerRoute[] = [
     renderMode: RenderMode.Server,
   },
   {
+    path: 'candidate-interview/:id',
+    renderMode: RenderMode.Client,
+  },
+  {
     path: 'dashboard',
     renderMode: RenderMode.Client,
   },

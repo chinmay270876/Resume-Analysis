@@ -588,8 +588,70 @@ export interface ScheduledInterview {
   reminderStatus?: InterviewReminderStatus;
   invitationSent?: boolean;
   invitationSentAt?: string | null;
+  questions?: CandidateInterviewQuestion[];
+  interviewDetails?: InterviewDetails | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface CandidateInterviewQuestion {
+  questionNo: number;
+  question: string;
+  category?: string | null;
+  difficulty?: string | null;
+  estimatedTime?: string | null;
+  sectionName?: string | null;
+}
+
+export interface InterviewAnswerEntry {
+  questionNo: number;
+  question?: string | null;
+  transcript: string;
+  audioDurationSeconds?: number | null;
+  answeredAt?: string | null;
+}
+
+export interface InterviewDetails {
+  answers: InterviewAnswerEntry[];
+  startedAt?: string | null;
+  completedAt?: string | null;
+  roomId?: string | null;
+}
+
+export interface CandidateInterviewSession {
+  id: string;
+  candidateName: string;
+  candidateEmail?: string;
+  jobRole?: string | null;
+  date?: string | null;
+  time?: string | null;
+  timezone?: string;
+  durationMinutes?: number;
+  scheduledAt?: string | null;
+  status?: string;
+  questions?: CandidateInterviewQuestion[];
+  interviewJson?: StructuredInterview | Record<string, unknown> | null;
+  interviewDetails?: InterviewDetails | null;
+  meetingLink?: string;
+  joinState?: InterviewJoinInfo;
+}
+
+export interface InterviewTokenResult {
+  success: boolean;
+  token?: string;
+  roomId?: string;
+  candidateName?: string;
+  interview?: CandidateInterviewSession;
+  message?: string;
+  error?: string;
+}
+
+export interface InterviewAnswersResult {
+  success: boolean;
+  interview?: ScheduledInterview;
+  interviewDetails?: InterviewDetails;
+  message?: string;
+  error?: string;
 }
 
 export interface PodcastTranscriptResult {
