@@ -23,7 +23,7 @@ const {
 function resolveMeetingLink(rawLink, interviewId) {
     const sanitized = sanitizeHttpUrl(rawLink);
     if (sanitized) {
-        return sanitized;
+        return normalizeMeetingLink(sanitized, interviewId);
     }
     // Built links are always http(s) from FRONTEND_URL / localhost defaults.
     return buildMeetingLink(interviewId);
@@ -65,13 +65,106 @@ function parseDuration(value) {
     return Math.round(num);
 }
 
-function buildMeetingLink(interviewId) {
-    const base =
+function frontendBaseUrl() {
+    return (
         process.env.FRONTEND_URL ||
         process.env.CORS_ORIGINS?.split(",")[0]?.trim() ||
         (process.env.RENDER ? "https://resume-analysis-b7p7.onrender.com" : null) ||
-        "http://localhost:4200";
-    return `${base.replace(/\/$/, "")}/interviews/${interviewId}`;
+        "http://localhost:4200"
+    );
+}
+
+function buildMeetingLink(interviewId) {
+    const base = frontendBaseUrl();
+    return `${base.replace(/\/$/, "")}/candidate-interview/${interviewId}`;
+}
+
+/** Rewrite legacy recruiter /interviews/:id links to the candidate room path. */
+function normalizeMeetingLink(link, interviewId) {
+    if (!link || typeof link !== "string") {
+        return buildMeetingLink(interviewId);
+    }
+    try {
+        const rewritten = link.replace(/\/interviews\/([^/?#]+)/, "/candidate-interview/$1");
+        return sanitizeHttpUrl(rewritten) || buildMeetingLink(interviewId);
+    } catch {
+        return buildMeetingLink(interviewId);
+    }
+}
+
+/**
+ * Flatten structured interview sections into an ordered question list for the live room.
+ */
+function extractInterviewQuestions(interview) {
+    const structured = interview?.interviewJson || interview?.interview || null;
+    const questions = [];
+
+    if (structured && typeof structured === "object" && Array.isArray(structured.sections)) {
+        for (const section of structured.sections) {
+            const sectionName =
+                typeof section?.sectionName === "string" ? section.sectionName : "";
+            const list = Array.isArray(section?.questions) ? section.questions : [];
+            for (const q of list) {
+                const text =
+                    typeof q?.question === "string"
+                        ? q.question.trim()
+                        : typeof q === "string"
+                          ? q.trim()
+                          : "";
+                if (!text) continue;
+                questions.push({
+                    questionNo: questions.length + 1,
+                    question: text,
+                    category: q?.category || sectionName || null,
+                    difficulty: q?.difficulty || null,
+                    estimatedTime: q?.estimatedTime || null,
+                    sectionName: sectionName || null,
+                });
+            }
+        }
+    }
+
+    if (questions.length === 0 && Array.isArray(interview?.questions)) {
+        interview.questions.forEach((q, idx) => {
+            const text =
+                typeof q?.question === "string"
+                    ? q.question.trim()
+                    : typeof q === "string"
+                      ? q.trim()
+                      : "";
+            if (!text) return;
+            questions.push({
+                questionNo: idx + 1,
+                question: text,
+                category: q?.category || null,
+                difficulty: q?.difficulty || null,
+                estimatedTime: q?.estimatedTime || null,
+                sectionName: q?.sectionName || null,
+            });
+        });
+    }
+
+    return questions;
+}
+
+function emptyInterviewDetails() {
+    return {
+        answers: [],
+        startedAt: null,
+        completedAt: null,
+        roomId: null,
+    };
+}
+
+function normalizeInterviewDetails(details) {
+    const base = emptyInterviewDetails();
+    if (!details || typeof details !== "object") return base;
+    return {
+        answers: Array.isArray(details.answers) ? details.answers : [],
+        startedAt: details.startedAt || null,
+        completedAt: details.completedAt || null,
+        roomId: details.roomId || null,
+    };
 }
 
 function parseInterviewDateTime(date, time, tz) {
@@ -311,6 +404,10 @@ function enrichInterview(interview) {
         }) ||
         null;
 
+    const interviewDetails = normalizeInterviewDetails(interview.interviewDetails);
+    const questions = extractInterviewQuestions(interview);
+    const meetingLink = normalizeMeetingLink(interview.meetingLink, interview.id);
+
     const enriched = {
         ...interview,
         jobRole,
@@ -329,6 +426,9 @@ function enrichInterview(interview) {
         excelSummaryPath: interview.excelSummaryPath || null,
         excelSummaryFilename: interview.excelSummaryFilename || null,
         excelSummaryUrl: interview.excelSummaryUrl || null,
+        interviewDetails,
+        questions,
+        meetingLink,
         // Canonical + alias fields for dashboard / reminder pipeline clarity
         interviewDate: interview.interviewDate || interview.date || null,
         interviewTime: interview.interviewTime || interview.time || null,
@@ -554,6 +654,7 @@ function buildInterviewRecord(payload, schedule) {
         reminderSent: false,
         invitationSent: false,
         invitationSentAt: null,
+        interviewDetails: emptyInterviewDetails(),
         // Post-interview artifacts — populated only after live Voice AI completes
         transcriptId: null,
         transcriptPath: null,
@@ -990,8 +1091,11 @@ async function updateInterview(id, payload) {
             reminderTimestamps,
             reminderTimestamp: resolvePrimaryReminderTimestamp(reminderTimestamps),
             meetingLink: payload.meetingLink !== undefined
-                ? (sanitizeHttpUrl(payload.meetingLink) || current.meetingLink)
-                : current.meetingLink,
+                ? (normalizeMeetingLink(
+                      sanitizeHttpUrl(payload.meetingLink) || current.meetingLink,
+                      current.id
+                  ))
+                : normalizeMeetingLink(current.meetingLink, current.id),
             status: nextStatus,
             reminders: nextReminders,
             reminderSent: scheduleActuallyChanged
@@ -1108,6 +1212,165 @@ async function compareCandidates(ids = []) {
     return buildCandidateCompare(interviews, ids);
 }
 
+/**
+ * Issue a 100ms auth token for the candidate interview room.
+ * Returns a candidate-safe interview payload (questions + schedule, no internal paths).
+ */
+async function issueCandidateRoomToken(id) {
+    const interview = await getInterview(id);
+    if (!interview) {
+        throw createHttpError("Interview not found.", 404);
+    }
+    if (
+        interview.status === INTERVIEW_STATUSES.CANCELLED ||
+        interview.status === INTERVIEW_STATUSES.EXPIRED
+    ) {
+        throw createHttpError("This interview cannot be joined.", 403);
+    }
+
+    const { generateAuthToken } = require("./hmsTokenService");
+    const role = process.env["100MS_ROLE"] || process.env.HMS_ROLE || "guest";
+    const tokenResult = await generateAuthToken({
+        userId: interview.candidateId || interview.id,
+        userName: interview.candidateName,
+        role,
+    });
+
+    const now = new Date().toISOString();
+    await interviewStore.updateInterview(id, (current) => {
+        const details = normalizeInterviewDetails(current.interviewDetails);
+        return {
+            ...current,
+            meetingLink: normalizeMeetingLink(current.meetingLink, current.id),
+            interviewDetails: {
+                ...details,
+                startedAt: details.startedAt || now,
+                roomId: tokenResult.roomId,
+            },
+            status:
+                current.status === INTERVIEW_STATUSES.SCHEDULED ||
+                current.status === INTERVIEW_STATUSES.REMINDER_SENT
+                    ? INTERVIEW_STATUSES.IN_PROGRESS
+                    : current.status,
+            updatedAt: now,
+        };
+    });
+
+    const refreshed = await getInterview(id);
+    const candidateInterview = {
+        id: refreshed.id,
+        candidateName: refreshed.candidateName,
+        candidateEmail: refreshed.candidateEmail,
+        jobRole: refreshed.jobRole,
+        date: refreshed.date,
+        time: refreshed.time,
+        timezone: refreshed.timezone,
+        durationMinutes: refreshed.durationMinutes,
+        scheduledAt: refreshed.scheduledAt,
+        status: refreshed.status,
+        joinState: refreshed.joinState,
+        questions: refreshed.questions || [],
+        interviewJson: refreshed.interviewJson || null,
+        interviewDetails: refreshed.interviewDetails || emptyInterviewDetails(),
+        meetingLink: refreshed.meetingLink,
+    };
+
+    return {
+        token: tokenResult.token,
+        roomId: tokenResult.roomId,
+        candidateName: refreshed.candidateName,
+        interview: candidateInterview,
+    };
+}
+
+/**
+ * Persist per-question candidate answers / speech transcripts under interviewDetails.
+ */
+async function saveCandidateAnswers(id, payload = {}) {
+    const interview = await interviewStore.getInterviewById(id);
+    if (!interview) {
+        throw createHttpError("Interview not found.", 404);
+    }
+
+    const now = new Date().toISOString();
+    const details = normalizeInterviewDetails(interview.interviewDetails);
+    const incomingAnswers = Array.isArray(payload.answers)
+        ? payload.answers
+        : payload.answer
+          ? [payload.answer]
+          : [];
+
+    if (incomingAnswers.length === 0 && payload.questionNo == null && !payload.transcript) {
+        throw createHttpError("Provide answers[] or a single answer with transcript.", 400);
+    }
+
+    const normalizedIncoming =
+        incomingAnswers.length > 0
+            ? incomingAnswers
+            : [
+                  {
+                      questionNo: payload.questionNo,
+                      question: payload.question,
+                      transcript: payload.transcript || payload.text || "",
+                      audioDurationSeconds: payload.audioDurationSeconds,
+                  },
+              ];
+
+    for (const raw of normalizedIncoming) {
+        const questionNo = Number(raw.questionNo);
+        const transcript =
+            typeof raw.transcript === "string"
+                ? raw.transcript.trim()
+                : typeof raw.text === "string"
+                  ? raw.text.trim()
+                  : "";
+        if (!Number.isFinite(questionNo) || questionNo < 1) {
+            throw createHttpError("Each answer requires a valid questionNo.", 400);
+        }
+
+        const entry = {
+            questionNo,
+            question:
+                typeof raw.question === "string" && raw.question.trim()
+                    ? raw.question.trim()
+                    : null,
+            transcript,
+            audioDurationSeconds:
+                raw.audioDurationSeconds != null && Number.isFinite(Number(raw.audioDurationSeconds))
+                    ? Number(raw.audioDurationSeconds)
+                    : null,
+            answeredAt: raw.answeredAt || now,
+        };
+
+        const existingIdx = details.answers.findIndex((a) => a.questionNo === questionNo);
+        if (existingIdx >= 0) {
+            details.answers[existingIdx] = {
+                ...details.answers[existingIdx],
+                ...entry,
+                transcript: entry.transcript || details.answers[existingIdx].transcript,
+            };
+        } else {
+            details.answers.push(entry);
+        }
+    }
+
+    details.answers.sort((a, b) => a.questionNo - b.questionNo);
+
+    const markComplete = payload.completed === true || payload.finish === true;
+    if (markComplete) {
+        details.completedAt = now;
+    }
+
+    const updated = await interviewStore.updateInterview(id, (current) => ({
+        ...current,
+        interviewDetails: details,
+        status: markComplete ? INTERVIEW_STATUSES.COMPLETED : current.status,
+        updatedAt: now,
+    }));
+
+    return enrichInterview(updated);
+}
+
 module.exports = {
     INTERVIEW_STATUSES,
     INTERVIEW_RESULTS,
@@ -1123,6 +1386,8 @@ module.exports = {
     markReminderSent,
     enrichInterview,
     buildMeetingLink,
+    normalizeMeetingLink,
+    extractInterviewQuestions,
     parseInterviewDateTime,
     computeReminderTimestamps,
     computeJoinState,
@@ -1131,4 +1396,6 @@ module.exports = {
     getInterviewStats,
     getCandidateRanking,
     compareCandidates,
+    issueCandidateRoomToken,
+    saveCandidateAnswers,
 };

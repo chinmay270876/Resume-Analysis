@@ -365,3 +365,42 @@ exports.processRemindersNow = async (req, res, next) => {
         next(error);
     }
 };
+
+/**
+ * POST /api/interviews/:id/token
+ * Public candidate endpoint — issues a 100ms auth token for the interview room.
+ */
+exports.issueInterviewToken = async (req, res, next) => {
+    try {
+        const result = await interviewService.issueCandidateRoomToken(req.params.id);
+        return res.status(200).json({
+            success: true,
+            token: result.token,
+            roomId: result.roomId,
+            candidateName: result.candidateName,
+            interview: result.interview,
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * POST /api/interviews/:id/answers
+ * Public candidate endpoint — persist per-question transcripts under interviewDetails.
+ */
+exports.saveInterviewAnswers = async (req, res, next) => {
+    try {
+        const interview = await interviewService.saveCandidateAnswers(
+            req.params.id,
+            req.body || {}
+        );
+        return res.status(200).json({
+            success: true,
+            interview,
+            interviewDetails: interview.interviewDetails,
+        });
+    } catch (error) {
+        next(error);
+    }
+};

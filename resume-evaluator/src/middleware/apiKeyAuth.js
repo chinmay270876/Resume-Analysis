@@ -5,6 +5,11 @@ const crypto = require("crypto");
  * (backwards-compatible for local/dev). When set, require matching
  * X-API-Key, Authorization: Bearer <key>, or (GET only) ?api_key= for
  * browser download links that cannot send custom headers.
+ *
+ * Candidate interview room endpoints remain public so invitees can join
+ * without the recruiter API key:
+ *   POST /api/interviews/:id/token
+ *   POST /api/interviews/:id/answers
  */
 function timingSafeEqualString(a, b) {
     if (typeof a !== "string" || typeof b !== "string") return false;
@@ -18,7 +23,17 @@ function timingSafeEqualString(a, b) {
     return crypto.timingSafeEqual(bufA, bufB);
 }
 
+function isPublicCandidateInterviewRoute(req) {
+    if (req.method !== "POST") return false;
+    const url = String(req.originalUrl || req.url || "").split("?")[0];
+    return /\/api\/interviews\/[^/]+\/(token|answers)\/?$/.test(url);
+}
+
 function apiKeyAuth(req, res, next) {
+    if (isPublicCandidateInterviewRoute(req)) {
+        return next();
+    }
+
     const expected = process.env.API_KEY;
     if (!expected) {
         return next();
@@ -46,4 +61,4 @@ function apiKeyAuth(req, res, next) {
     return next();
 }
 
-module.exports = { apiKeyAuth };
+module.exports = { apiKeyAuth, isPublicCandidateInterviewRoute };

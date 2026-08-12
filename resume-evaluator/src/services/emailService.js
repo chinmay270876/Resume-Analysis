@@ -10,6 +10,22 @@ const DEFAULT_SMTP_HOST = "smtp.gmail.com";
 const DEFAULT_SMTP_PORT = 587;
 const MAX_SEND_ATTEMPTS = 3;
 
+function resolveCandidateInterviewUrl(interview) {
+    const fromRecord = sanitizeHttpUrl(interview?.meetingLink || "");
+    if (fromRecord) {
+        return fromRecord.replace(/\/interviews\/([^/?#]+)/, "/candidate-interview/$1");
+    }
+    if (interview?.id) {
+        const base =
+            process.env.FRONTEND_URL ||
+            process.env.CORS_ORIGINS?.split(",")[0]?.trim() ||
+            (process.env.RENDER ? "https://resume-analysis-b7p7.onrender.com" : null) ||
+            "http://localhost:4200";
+        return `${base.replace(/\/$/, "")}/candidate-interview/${interview.id}`;
+    }
+    return sanitizeHttpUrl(process.env.CALENDLY_LINK || "") || "";
+}
+
 /**
  * Validates an email address. Returns false for missing, placeholder, or
  * syntactically invalid addresses. Never throws.
@@ -327,9 +343,7 @@ async function sendScheduledInterviewInvite(interview) {
         const duration = Number(interview.durationMinutes) || 25;
         const jobRole = escapeHtml(resolveJobRole(interview));
         const recruiterContact = escapeHtml(resolveRecruiterContact());
-        const meetingLink = sanitizeHttpUrl(
-            interview.meetingLink || process.env.CALENDLY_LINK || ""
-        );
+        const meetingLink = resolveCandidateInterviewUrl(interview);
         const meetingHref = escapeHtml(meetingLink);
 
         console.log(`📧 Sending scheduled interview invite to ${candidateEmail}`);
@@ -390,7 +404,7 @@ async function sendScheduledInterviewInvite(interview) {
                                 display:inline-block;
                             "
                         >
-                            Interview Link
+                            Join Interview
                         </a>
                     </p>
                     <p style="color:#64748b; font-size:13px; word-break:break-all;">${meetingHref}</p>
@@ -476,7 +490,7 @@ async function sendInterviewReminder(interview, reminderType) {
         const duration = Number(interview.durationMinutes) || 25;
         const jobRole = escapeHtml(resolveJobRole(interview));
         const recruiterContact = escapeHtml(resolveRecruiterContact());
-        const meetingLink = sanitizeHttpUrl(interview.meetingLink || "");
+        const meetingLink = resolveCandidateInterviewUrl(interview);
         const meetingHref = escapeHtml(meetingLink);
         const labelSafe = escapeHtml(label);
 

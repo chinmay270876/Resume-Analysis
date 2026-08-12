@@ -13,6 +13,8 @@ const {
     compareCandidates,
     downloadResultReport,
     downloadExcelSummary,
+    issueInterviewToken,
+    saveInterviewAnswers,
 } = require("../controllers/interviewController");
 
 const {
@@ -33,6 +35,10 @@ router.post("/reminders/process", processRemindersNow);
 router.get("/stats", getInterviewStats);
 router.get("/ranking", getCandidateRanking);
 router.get("/compare", compareCandidates);
+
+// 100ms candidate room — public (API key exempt via middleware)
+router.post("/:id/token", issueInterviewToken);
+router.post("/:id/answers", saveInterviewAnswers);
 
 // Podcast Transcript Module — provider-agnostic completion + artifacts
 router.post("/:id/complete", completeInterview);
