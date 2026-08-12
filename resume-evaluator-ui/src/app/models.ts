@@ -667,7 +667,13 @@ export interface InterviewListResult {
 export interface InterviewDetailResult {
   success: boolean;
   interview?: ScheduledInterview;
-  email?: { success?: boolean; skipped?: boolean; error?: string; messageId?: string } | null;
+  email?: {
+    success?: boolean;
+    skipped?: boolean;
+    queued?: boolean;
+    error?: string;
+    messageId?: string;
+  } | null;
   message?: string;
   error?: string;
 }

@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
+import { finalize } from 'rxjs/operators';
 import {
   Analysis,
   COMMON_TIMEZONES,
@@ -122,29 +123,32 @@ export class InterviewScheduler implements OnInit, OnChanges {
     };
 
     this.submitting.set(true);
-    this.interviewService.createInterview(payload).subscribe({
-      next: (result) => {
-        this.submitting.set(false);
-        if (result?.success && result.interview) {
-          this.createdInterview.set(result.interview);
-          this.scheduled.emit(result.interview);
-          const emailNote =
-            result.email?.success
-              ? ' Invitation email sent.'
-              : result.email?.skipped
-                ? ' Invitation email skipped (invalid email).'
-                : result.email?.error
-                  ? ` Interview saved; email failed: ${result.email.error}`
-                  : '';
-          this.toast.show(`Interview scheduled.${emailNote}`, 'success');
-        } else {
-          this.error.set(result?.error || result?.message || 'Failed to schedule interview.');
-        }
-      },
-      error: (err: HttpErrorResponse) => {
-        this.submitting.set(false);
-        this.error.set(extractApiErrorMessage(err, 'Failed to schedule interview.'));
-      },
-    });
+    this.interviewService
+      .createInterview(payload)
+      .pipe(finalize(() => this.submitting.set(false)))
+      .subscribe({
+        next: (result) => {
+          if (result?.success && result.interview) {
+            this.createdInterview.set(result.interview);
+            this.scheduled.emit(result.interview);
+            const emailNote =
+              result.email?.queued
+                ? ' Invitation email is being sent.'
+                : result.email?.success
+                  ? ' Invitation email sent.'
+                  : result.email?.skipped
+                    ? ' Invitation email skipped (invalid email).'
+                    : result.email?.error
+                      ? ` Interview saved; email failed: ${result.email.error}`
+                      : '';
+            this.toast.show(`Interview scheduled.${emailNote}`, 'success');
+          } else {
+            this.error.set(result?.error || result?.message || 'Failed to schedule interview.');
+          }
+        },
+        error: (err: HttpErrorResponse) => {
+          this.error.set(extractApiErrorMessage(err, 'Failed to schedule interview.'));
+        },
+      });
   }
 }
