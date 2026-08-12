@@ -980,8 +980,8 @@ exports.rankCandidates = async (req, res, next) => {
             throw err;
         }
 
-        if (!Array.isArray(candidates) || candidates.length < 2) {
-            const err = new Error("At least 2 successfully processed candidates are required for ranking.");
+        if (!Array.isArray(candidates) || candidates.length < 1) {
+            const err = new Error("At least 1 successfully processed candidate is required for ranking.");
             err.status = 400;
             throw err;
         }

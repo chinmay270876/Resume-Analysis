@@ -9,6 +9,7 @@ const MASTER_FILEPATH = path.join(process.cwd(), REPORT_DIR, MASTER_FILENAME);
 const HEADERS = [
     "Name",
     "Ranking",
+    "JD Match Score",
     "Age",
     "Contact Number",
     "Email Id",
@@ -27,7 +28,7 @@ const HEADERS = [
 const RANKING_HEADERS = [
     "Rank",
     "Candidate Name",
-    "Match Score",
+    "JD Match Score",
     "Strengths / Weaknesses Summary",
     "Recommendation",
 ];
@@ -278,8 +279,20 @@ function findRowsByCandidateName(worksheet, name) {
     return rows;
 }
 
+function formatMatchScore(matchScore) {
+    if (matchScore == null || matchScore === "") {
+        return MISSING_VALUE;
+    }
+    const num = Number(matchScore);
+    if (!Number.isFinite(num)) {
+        return MISSING_VALUE;
+    }
+    return `${Math.round(num)}%`;
+}
+
 function updateCandidatesSheetRanking(worksheet, rankings) {
     const rankingCol = HEADERS.indexOf("Ranking") + 1;
+    const matchScoreCol = HEADERS.indexOf("JD Match Score") + 1;
     const reasonCol = HEADERS.indexOf("Reason for Rank") + 1;
 
     for (const entry of rankings) {
@@ -288,11 +301,15 @@ function updateCandidatesSheetRanking(worksheet, rankings) {
 
         const rowNums = findRowsByCandidateName(worksheet, candidateName);
         const rankValue = entry.rank != null ? String(entry.rank) : MISSING_VALUE;
+        const matchScoreValue = formatMatchScore(entry.matchScore);
         const reasonValue = toExcelValue(entry.reason);
 
         for (const rowNum of rowNums) {
             const row = worksheet.getRow(rowNum);
             row.getCell(rankingCol).value = rankValue;
+            if (matchScoreCol > 0) {
+                row.getCell(matchScoreCol).value = matchScoreValue;
+            }
             row.getCell(reasonCol).value = reasonValue;
         }
     }
@@ -363,6 +380,7 @@ async function _appendOrUpdateCandidateImpl(analysis, evaluation, atsEvaluation,
         "Number of companies worked with": toExcelValue(analysis?.numberOfCompaniesWorkedWith),
         "Certification": toExcelValue(analysis?.certifications),
         "Ranking": failed ? "Failed" : MISSING_VALUE,
+        "JD Match Score": MISSING_VALUE,
         "Reason for Rank": failed ? "Resume processing failed" : MISSING_VALUE,
     };
 
@@ -457,7 +475,7 @@ async function _writeCandidateRankingImpl(rankings) {
         rankingSheet.addRow({
             "Rank": toExcelValue(entry.rank),
             "Candidate Name": toExcelValue(entry.candidateName),
-            "Match Score": entry.matchScore != null ? `${entry.matchScore}%` : MISSING_VALUE,
+            "JD Match Score": formatMatchScore(entry.matchScore),
             "Strengths / Weaknesses Summary": formatStrengthsWeaknessesSummary(entry),
             "Recommendation": toExcelValue(entry.recommendation),
         });
