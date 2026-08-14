@@ -375,10 +375,12 @@ exports.issueInterviewToken = async (req, res, next) => {
         const result = await interviewService.issueCandidateRoomToken(req.params.id);
         return res.status(200).json({
             success: true,
-            token: result.token,
-            roomId: result.roomId,
+            token: result.token || null,
+            roomId: result.roomId || null,
             candidateName: result.candidateName,
             interview: result.interview,
+            questions: result.questions || result.interview?.questions || [],
+            hmsError: result.hmsError || null,
         });
     } catch (error) {
         next(error);
@@ -399,6 +401,22 @@ exports.saveInterviewAnswers = async (req, res, next) => {
             success: true,
             interview,
             interviewDetails: interview.interviewDetails,
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * POST /api/interviews/:id/extend
+ * Recruiter-only — extend expiresAt by +24 hours while the link is still valid.
+ */
+exports.extendInterviewLink = async (req, res, next) => {
+    try {
+        const interview = await interviewService.extendInterviewLink(req.params.id);
+        return res.status(200).json({
+            success: true,
+            interview,
         });
     } catch (error) {
         next(error);

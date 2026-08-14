@@ -12,6 +12,11 @@ const { isValidEmail } = require("./emailService");
 const { sanitizeHttpUrl } = require("../utils/htmlEscape");
 const interviewStore = require("./interviewStore");
 const {
+    LINK_EXPIRY_HOURS,
+    resolveExpiresAt,
+    isLinkExpired,
+} = require("../middleware/interviewLinkExpiry");
+const {
     INTERVIEW_STATUSES,
     INTERVIEW_RESULTS,
     ACTIVE_SCHEDULE_STATUSES,
@@ -31,6 +36,8 @@ function resolveMeetingLink(rawLink, interviewId) {
 
 const DEFAULT_DURATION_MINUTES = 25;
 const DEFAULT_TIMEZONE = "UTC";
+const LINK_EXTEND_HOURS = 24;
+const MAX_SESSION_MINUTES = 30;
 
 /** Standard reminder offsets (minutes before scheduledAt). Kept in sync with reminder service defaults. */
 const REMINDER_OFFSET_MINUTES = Object.freeze({
@@ -92,59 +99,96 @@ function normalizeMeetingLink(link, interviewId) {
     }
 }
 
+function parseMaybeJson(value) {
+    if (!value) return null;
+    if (typeof value === "string") {
+        try {
+            return JSON.parse(value);
+        } catch {
+            return null;
+        }
+    }
+    return typeof value === "object" ? value : null;
+}
+
+function questionTextFrom(raw) {
+    if (typeof raw === "string") return raw.trim();
+    if (!raw || typeof raw !== "object") return "";
+    for (const key of ["question", "text", "prompt", "q"]) {
+        if (typeof raw[key] === "string" && raw[key].trim()) {
+            return raw[key].trim();
+        }
+    }
+    return "";
+}
+
+function collectQuestionsFromList(list, sectionName = "") {
+    const questions = [];
+    if (!Array.isArray(list)) return questions;
+    for (const q of list) {
+        if (q && typeof q === "object" && Array.isArray(q.questions)) {
+            questions.push(
+                ...collectQuestionsFromList(q.questions, q.sectionName || sectionName)
+            );
+            continue;
+        }
+        const text = questionTextFrom(q);
+        if (!text) continue;
+        questions.push({
+            questionNo: 0,
+            question: text,
+            category: (q && q.category) || sectionName || null,
+            difficulty: (q && q.difficulty) || null,
+            estimatedTime: (q && q.estimatedTime) || null,
+            sectionName: (q && q.sectionName) || sectionName || null,
+        });
+    }
+    return questions;
+}
+
 /**
  * Flatten structured interview sections into an ordered question list for the live room.
  */
 function extractInterviewQuestions(interview) {
-    const structured = interview?.interviewJson || interview?.interview || null;
-    const questions = [];
+    const structured =
+        parseMaybeJson(interview?.interviewJson) ||
+        parseMaybeJson(interview?.interview) ||
+        null;
 
-    if (structured && typeof structured === "object" && Array.isArray(structured.sections)) {
-        for (const section of structured.sections) {
+    const sections = Array.isArray(structured?.sections)
+        ? structured.sections
+        : Array.isArray(structured?.interview?.sections)
+          ? structured.interview.sections
+          : [];
+
+    let questions = [];
+    if (sections.length > 0) {
+        for (const section of sections) {
             const sectionName =
                 typeof section?.sectionName === "string" ? section.sectionName : "";
-            const list = Array.isArray(section?.questions) ? section.questions : [];
-            for (const q of list) {
-                const text =
-                    typeof q?.question === "string"
-                        ? q.question.trim()
-                        : typeof q === "string"
-                          ? q.trim()
-                          : "";
-                if (!text) continue;
-                questions.push({
-                    questionNo: questions.length + 1,
-                    question: text,
-                    category: q?.category || sectionName || null,
-                    difficulty: q?.difficulty || null,
-                    estimatedTime: q?.estimatedTime || null,
-                    sectionName: sectionName || null,
-                });
-            }
+            questions.push(
+                ...collectQuestionsFromList(
+                    Array.isArray(section?.questions) ? section.questions : [],
+                    sectionName
+                )
+            );
         }
     }
 
-    if (questions.length === 0 && Array.isArray(interview?.questions)) {
-        interview.questions.forEach((q, idx) => {
-            const text =
-                typeof q?.question === "string"
-                    ? q.question.trim()
-                    : typeof q === "string"
-                      ? q.trim()
-                      : "";
-            if (!text) return;
-            questions.push({
-                questionNo: idx + 1,
-                question: text,
-                category: q?.category || null,
-                difficulty: q?.difficulty || null,
-                estimatedTime: q?.estimatedTime || null,
-                sectionName: q?.sectionName || null,
-            });
-        });
+    if (questions.length === 0) {
+        questions = collectQuestionsFromList(
+            Array.isArray(structured?.questions)
+                ? structured.questions
+                : Array.isArray(interview?.questions)
+                  ? interview.questions
+                  : []
+        );
     }
 
-    return questions;
+    return questions.map((q, idx) => ({
+        ...q,
+        questionNo: idx + 1,
+    }));
 }
 
 function emptyInterviewDetails() {
@@ -192,6 +236,21 @@ function parseInterviewDateTime(date, time, tz) {
     }
 
     return parsed;
+}
+
+function computeExpiresAt(scheduledAtIso) {
+    if (!scheduledAtIso) return null;
+    const scheduledAt = dayjs(scheduledAtIso);
+    if (!scheduledAt.isValid()) return null;
+    return scheduledAt.add(LINK_EXPIRY_HOURS, "hour").toISOString();
+}
+
+function sessionCapMinutes(durationMinutes) {
+    const duration = Number(durationMinutes);
+    const minutes = Number.isFinite(duration) && duration > 0
+        ? duration
+        : DEFAULT_DURATION_MINUTES;
+    return Math.min(Math.round(minutes), MAX_SESSION_MINUTES);
 }
 
 function computeReminderTimestamps(scheduledAtIso) {
@@ -346,7 +405,16 @@ function computeJoinState(interview) {
 
     const now = dayjs();
     const start = dayjs(interview.scheduledAt);
-    const end = start.add(interview.durationMinutes || DEFAULT_DURATION_MINUTES, "minute");
+    const expiresAtIso = resolveExpiresAt(interview);
+    const expiresAt = expiresAtIso ? dayjs(expiresAtIso) : null;
+
+    if (expiresAt && now.isAfter(expiresAt)) {
+        return {
+            state: "ended",
+            label: "Interview Link Expired",
+            message: "This interview link is no longer valid.",
+        };
+    }
 
     if (now.isBefore(start)) {
         return {
@@ -355,7 +423,10 @@ function computeJoinState(interview) {
             message: "Waiting for scheduled time",
         };
     }
-    if (now.isBefore(end) || status === INTERVIEW_STATUSES.IN_PROGRESS) {
+    if (
+        status === INTERVIEW_STATUSES.IN_PROGRESS ||
+        (expiresAt && (now.isBefore(expiresAt) || now.isSame(expiresAt)))
+    ) {
         return {
             state: "started",
             label: "Interview Started",
@@ -407,9 +478,19 @@ function enrichInterview(interview) {
     const interviewDetails = normalizeInterviewDetails(interview.interviewDetails);
     const questions = extractInterviewQuestions(interview);
     const meetingLink = normalizeMeetingLink(interview.meetingLink, interview.id);
+    const expiresAt = resolveExpiresAt(interview);
+    const linkExpired = isLinkExpired({ ...interview, expiresAt });
+    const capMinutes = sessionCapMinutes(interview.durationMinutes);
 
     const enriched = {
         ...interview,
+        expiresAt,
+        linkExpired,
+        canExtendLink:
+            !linkExpired &&
+            !!expiresAt &&
+            ACTIVE_SCHEDULE_STATUSES.includes(interview.status),
+        sessionCapMinutes: capMinutes,
         jobRole,
         currentCompany,
         interviewer: interview.interviewer || null,
@@ -499,24 +580,36 @@ function applyLifecycleTransitions(item, now = dayjs()) {
     }
 
     const start = dayjs(item.scheduledAt);
-    const end = start.add(item.durationMinutes || DEFAULT_DURATION_MINUTES, "minute");
+    const expiresAtIso = resolveExpiresAt(item);
+    const expiresAt = expiresAtIso ? dayjs(expiresAtIso) : null;
+    const sessionEnd = start.add(sessionCapMinutes(item.durationMinutes), "minute");
     const updatedAt = new Date().toISOString();
 
-    if (end.isBefore(now)) {
+    if (expiresAt && expiresAt.isBefore(now)) {
         return {
-            item: { ...item, status: INTERVIEW_STATUSES.EXPIRED, updatedAt },
+            item: {
+                ...item,
+                expiresAt: expiresAtIso,
+                status: INTERVIEW_STATUSES.EXPIRED,
+                updatedAt,
+            },
             changed: true,
         };
     }
 
     if (
         !start.isAfter(now) &&
-        start.isBefore(end) &&
+        now.isBefore(sessionEnd) &&
         (item.status === INTERVIEW_STATUSES.SCHEDULED ||
             item.status === INTERVIEW_STATUSES.REMINDER_SENT)
     ) {
         return {
-            item: { ...item, status: INTERVIEW_STATUSES.IN_PROGRESS, updatedAt },
+            item: {
+                ...item,
+                expiresAt: item.expiresAt || expiresAtIso,
+                status: INTERVIEW_STATUSES.IN_PROGRESS,
+                updatedAt,
+            },
             changed: true,
         };
     }
@@ -646,6 +739,7 @@ function buildInterviewRecord(payload, schedule) {
         durationMinutes: schedule.durationMinutes,
         scheduledAt: schedule.scheduledAtIso,
         scheduledTimestamp: schedule.scheduledAtIso,
+        expiresAt: computeExpiresAt(schedule.scheduledAtIso),
         reminderTimestamps,
         reminderTimestamp: resolvePrimaryReminderTimestamp(reminderTimestamps),
         meetingLink: resolveMeetingLink(payload.meetingLink, id),
@@ -1088,6 +1182,9 @@ async function updateInterview(id, payload) {
             durationMinutes,
             scheduledAt: scheduledAtIso,
             scheduledTimestamp: scheduledAtIso,
+            expiresAt: scheduleActuallyChanged
+                ? computeExpiresAt(scheduledAtIso)
+                : current.expiresAt || computeExpiresAt(scheduledAtIso),
             reminderTimestamps,
             reminderTimestamp: resolvePrimaryReminderTimestamp(reminderTimestamps),
             meetingLink: payload.meetingLink !== undefined
@@ -1221,22 +1318,40 @@ async function issueCandidateRoomToken(id) {
     if (!interview) {
         throw createHttpError("Interview not found.", 404);
     }
-    if (
-        interview.status === INTERVIEW_STATUSES.CANCELLED ||
-        interview.status === INTERVIEW_STATUSES.EXPIRED
-    ) {
+    if (interview.status === INTERVIEW_STATUSES.CANCELLED) {
         throw createHttpError("This interview cannot be joined.", 403);
     }
+    if (POST_COMPLETION_STATUSES.includes(interview.status)) {
+        throw createHttpError("This interview has already been completed.", 403);
+    }
+    if (interview.linkExpired) {
+        const err = createHttpError("Link Expired", 403);
+        err.code = "LINK_EXPIRED";
+        throw err;
+    }
 
-    const { generateAuthToken } = require("./hmsTokenService");
-    const role = process.env["100MS_ROLE"] || process.env.HMS_ROLE || "guest";
-    const tokenResult = await generateAuthToken({
-        userId: interview.candidateId || interview.id,
-        userName: interview.candidateName,
-        role,
-    });
-
+    const questions = extractInterviewQuestions(interview);
     const now = new Date().toISOString();
+
+    let token = null;
+    let roomId = null;
+    let hmsError = null;
+
+    try {
+        const { generateAuthToken } = require("./hmsTokenService");
+        const role = process.env["100MS_ROLE"] || process.env.HMS_ROLE || "guest";
+        const tokenResult = await generateAuthToken({
+            userId: interview.candidateId || interview.id,
+            userName: interview.candidateName,
+            role,
+        });
+        token = tokenResult.token || null;
+        roomId = tokenResult.roomId || null;
+    } catch (err) {
+        hmsError = err?.message || "Unable to join the live audio room.";
+        console.warn("[HMS] token issue failed; continuing with questions only:", hmsError);
+    }
+
     await interviewStore.updateInterview(id, (current) => {
         const details = normalizeInterviewDetails(current.interviewDetails);
         return {
@@ -1245,11 +1360,12 @@ async function issueCandidateRoomToken(id) {
             interviewDetails: {
                 ...details,
                 startedAt: details.startedAt || now,
-                roomId: tokenResult.roomId,
+                roomId: roomId || details.roomId,
             },
             status:
                 current.status === INTERVIEW_STATUSES.SCHEDULED ||
-                current.status === INTERVIEW_STATUSES.REMINDER_SENT
+                current.status === INTERVIEW_STATUSES.REMINDER_SENT ||
+                current.status === INTERVIEW_STATUSES.EXPIRED
                     ? INTERVIEW_STATUSES.IN_PROGRESS
                     : current.status,
             updatedAt: now,
@@ -1266,20 +1382,26 @@ async function issueCandidateRoomToken(id) {
         time: refreshed.time,
         timezone: refreshed.timezone,
         durationMinutes: refreshed.durationMinutes,
+        sessionCapMinutes: refreshed.sessionCapMinutes,
         scheduledAt: refreshed.scheduledAt,
+        expiresAt: refreshed.expiresAt,
         status: refreshed.status,
         joinState: refreshed.joinState,
-        questions: refreshed.questions || [],
+        questions: (refreshed.questions && refreshed.questions.length
+            ? refreshed.questions
+            : questions) || [],
         interviewJson: refreshed.interviewJson || null,
         interviewDetails: refreshed.interviewDetails || emptyInterviewDetails(),
         meetingLink: refreshed.meetingLink,
     };
 
     return {
-        token: tokenResult.token,
-        roomId: tokenResult.roomId,
+        token,
+        roomId,
         candidateName: refreshed.candidateName,
         interview: candidateInterview,
+        questions: candidateInterview.questions,
+        hmsError,
     };
 }
 
@@ -1300,21 +1422,30 @@ async function saveCandidateAnswers(id, payload = {}) {
           ? [payload.answer]
           : [];
 
-    if (incomingAnswers.length === 0 && payload.questionNo == null && !payload.transcript) {
+    const markComplete = payload.completed === true || payload.finish === true;
+
+    if (
+        incomingAnswers.length === 0 &&
+        payload.questionNo == null &&
+        !payload.transcript &&
+        !markComplete
+    ) {
         throw createHttpError("Provide answers[] or a single answer with transcript.", 400);
     }
 
     const normalizedIncoming =
         incomingAnswers.length > 0
             ? incomingAnswers
-            : [
-                  {
-                      questionNo: payload.questionNo,
-                      question: payload.question,
-                      transcript: payload.transcript || payload.text || "",
-                      audioDurationSeconds: payload.audioDurationSeconds,
-                  },
-              ];
+            : payload.questionNo != null || payload.transcript
+              ? [
+                    {
+                        questionNo: payload.questionNo,
+                        question: payload.question,
+                        transcript: payload.transcript || payload.text || "",
+                        audioDurationSeconds: payload.audioDurationSeconds,
+                    },
+                ]
+              : [];
 
     for (const raw of normalizedIncoming) {
         const questionNo = Number(raw.questionNo);
@@ -1356,7 +1487,6 @@ async function saveCandidateAnswers(id, payload = {}) {
 
     details.answers.sort((a, b) => a.questionNo - b.questionNo);
 
-    const markComplete = payload.completed === true || payload.finish === true;
     if (markComplete) {
         details.completedAt = now;
     }
@@ -1371,11 +1501,41 @@ async function saveCandidateAnswers(id, payload = {}) {
     return enrichInterview(updated);
 }
 
+/**
+ * Extend the candidate meeting link by +24 hours if it has not expired yet.
+ */
+async function extendInterviewLink(id) {
+    const interview = await interviewStore.getInterviewById(id);
+    if (!interview) {
+        throw createHttpError("Interview not found.", 404);
+    }
+
+    const expiresAt = resolveExpiresAt(interview);
+    if (!expiresAt) {
+        throw createHttpError("Interview has no expiration to extend.", 400);
+    }
+    if (dayjs().isAfter(dayjs(expiresAt))) {
+        throw createHttpError("Cannot extend an expired link", 400);
+    }
+
+    const nextExpiresAt = dayjs(expiresAt).add(LINK_EXTEND_HOURS, "hour").toISOString();
+    const updated = await interviewStore.updateInterview(id, (current) => ({
+        ...current,
+        expiresAt: nextExpiresAt,
+        updatedAt: new Date().toISOString(),
+    }));
+
+    return enrichInterview(updated);
+}
+
 module.exports = {
     INTERVIEW_STATUSES,
     INTERVIEW_RESULTS,
     POST_COMPLETION_STATUSES,
     DEFAULT_DURATION_MINUTES,
+    MAX_SESSION_MINUTES,
+    LINK_EXPIRY_HOURS,
+    LINK_EXTEND_HOURS,
     REMINDER_OFFSET_MINUTES,
     createInterview,
     listInterviews,
@@ -1398,4 +1558,7 @@ module.exports = {
     compareCandidates,
     issueCandidateRoomToken,
     saveCandidateAnswers,
+    extendInterviewLink,
+    computeExpiresAt,
+    sessionCapMinutes,
 };

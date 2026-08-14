@@ -284,6 +284,7 @@ app.use((err, req, res, next) => {
             : hideErrorDetails
                 ? "Something went wrong"
                 : err.message,
+        code: err.code || undefined,
         stage: err.stage || "Unknown",
         stack: hideErrorDetails ? undefined : err.stack,
     });

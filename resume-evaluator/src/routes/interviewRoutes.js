@@ -15,7 +15,10 @@ const {
     downloadExcelSummary,
     issueInterviewToken,
     saveInterviewAnswers,
+    extendInterviewLink,
 } = require("../controllers/interviewController");
+
+const { requireActiveInterviewLink } = require("../middleware/interviewLinkExpiry");
 
 const {
     completeInterview,
@@ -37,8 +40,9 @@ router.get("/ranking", getCandidateRanking);
 router.get("/compare", compareCandidates);
 
 // 100ms candidate room — public (API key exempt via middleware)
-router.post("/:id/token", issueInterviewToken);
+router.post("/:id/token", requireActiveInterviewLink, issueInterviewToken);
 router.post("/:id/answers", saveInterviewAnswers);
+router.post("/:id/extend", extendInterviewLink);
 
 // Podcast Transcript Module — provider-agnostic completion + artifacts
 router.post("/:id/complete", completeInterview);
