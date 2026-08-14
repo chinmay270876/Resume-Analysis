@@ -11,6 +11,7 @@ import {
   InterviewSortDir,
   InterviewStats,
   ScheduledInterview,
+  interviewQuestionProgressLabel,
 } from '../../models';
 import { InterviewService } from '../../services/interview';
 import { ToastService } from '../../services/toast';
@@ -285,6 +286,10 @@ export class Dashboard implements OnInit, OnDestroy {
       return `${m}m ${String(s).padStart(2, '0')}s`;
     }
     return `${interview.durationMinutes} Minutes`;
+  }
+
+  protected questionProgress(interview: ScheduledInterview): string {
+    return interviewQuestionProgressLabel(interview);
   }
 
   protected formatAvg(value: number | null | undefined, suffix = ''): string {

@@ -11,6 +11,7 @@ import {
   JdAnalysis,
   ScheduledInterview,
   StructuredInterview,
+  interviewQuestionProgressLabel,
 } from '../../models';
 import { InterviewService } from '../../services/interview';
 import { ToastService } from '../../services/toast';
@@ -73,6 +74,17 @@ export class InterviewScheduler implements OnInit, OnChanges {
         this.duration = Math.min(Number(match[1]) || 25, 30);
       }
     }
+  }
+
+  protected questionPlanLabel(): string {
+    const interview = this.interview();
+    if (!interview) {
+      return interviewQuestionProgressLabel(null);
+    }
+    return interviewQuestionProgressLabel({
+      questions: interview.sections?.flatMap((s) => s.questions) || [],
+      interviewJson: interview,
+    });
   }
 
   /** Prefill candidate fields from resume analysis when available. */

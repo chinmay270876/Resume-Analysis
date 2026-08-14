@@ -13,6 +13,7 @@ import {
   JdAnalysis,
   ScheduledInterview,
   StructuredInterview,
+  interviewQuestionProgressLabel,
 } from '../../models';
 import { InterviewService } from '../../services/interview';
 import { ToastService } from '../../services/toast';
@@ -338,6 +339,10 @@ export class InterviewDetail implements OnInit, OnDestroy {
       return `${m}m ${String(s).padStart(2, '0')}s`;
     }
     return `${item.durationMinutes || 0} minutes (scheduled)`;
+  }
+
+  protected questionProgress(item: ScheduledInterview): string {
+    return interviewQuestionProgressLabel(item);
   }
 
   protected openReschedule(): void {

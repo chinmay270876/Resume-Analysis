@@ -48,6 +48,20 @@
   <ng-container *ngIf="!loading() && !error() && !linkExpired() && !timeLimitReached() && connectionStatus() !== 'Completed'">
     <section class="ci-stage">
       <p class="ci-progress">{{ questionProgressLabel() }}</p>
+      <div
+        *ngIf="questions().length"
+        class="ci-progress-dots"
+        role="progressbar"
+        [attr.aria-valuenow]="currentIndex() + 1"
+        aria-valuemin="1"
+        [attr.aria-valuemax]="totalQuestions"
+        [attr.aria-label]="'Question ' + (currentIndex() + 1) + ' of ' + totalQuestions">
+        <span
+          *ngFor="let step of progressDots; let i = index"
+          class="ci-progress-dot"
+          [class.is-done]="i < currentIndex()"
+          [class.is-active]="i === currentIndex()"></span>
+      </div>
       <div class="ci-question-row" *ngIf="currentQuestion() as q; else noQuestions">
         <h1 class="ci-question question-heading">{{ q.question }}</h1>
         <button

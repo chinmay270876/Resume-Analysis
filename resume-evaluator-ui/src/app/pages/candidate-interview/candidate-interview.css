@@ -207,6 +207,34 @@
   text-transform: uppercase;
 }
 
+.ci-progress-dots {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  max-width: 420px;
+  margin: 0 auto 16px;
+}
+
+.ci-progress-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(148, 163, 184, 0.35);
+  transition: transform 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+}
+
+.ci-progress-dot.is-done {
+  background: #22c55e;
+}
+
+.ci-progress-dot.is-active {
+  background: #67e8f9;
+  transform: scale(1.35);
+  box-shadow: 0 0 10px rgba(103, 232, 249, 0.65);
+}
+
 .ci-question-row {
   display: flex;
   align-items: flex-start;

@@ -260,11 +260,41 @@ export interface InterviewSection {
   questions: InterviewQuestion[];
 }
 
+export const MAX_INTERVIEW_QUESTIONS = 10;
+
 export interface StructuredInterview {
   interviewTitle: string;
   estimatedDuration: string;
   totalQuestions: number;
   sections: InterviewSection[];
+}
+
+/** Answered/total label for recruiter cards. Falls back to the 10-question standard. */
+export function interviewQuestionProgressLabel(interview: {
+  questions?: unknown[] | null;
+  interviewJson?: StructuredInterview | Record<string, unknown> | null;
+  interviewDetails?: { answers?: unknown[] | null } | null;
+} | null | undefined): string {
+  const total = resolveInterviewQuestionTotal(interview);
+  const answered = Array.isArray(interview?.interviewDetails?.answers)
+    ? interview.interviewDetails.answers.length
+    : 0;
+  return `${Math.min(answered, total)}/${total} questions`;
+}
+
+export function resolveInterviewQuestionTotal(interview: {
+  questions?: unknown[] | null;
+  interviewJson?: StructuredInterview | Record<string, unknown> | null;
+} | null | undefined): number {
+  const json = interview?.interviewJson;
+  const fromJson =
+    json && typeof json === 'object' && 'totalQuestions' in json
+      ? Number((json as StructuredInterview).totalQuestions)
+      : NaN;
+  const fromList = Array.isArray(interview?.questions) ? interview.questions.length : 0;
+  const raw = Number.isFinite(fromJson) && fromJson > 0 ? fromJson : fromList;
+  if (raw > 0) return Math.min(raw, MAX_INTERVIEW_QUESTIONS);
+  return MAX_INTERVIEW_QUESTIONS;
 }
 
 export interface GenerateInterviewResult {

@@ -58,6 +58,7 @@
       <label class="sched-field">
         <span>Duration (minutes)</span>
         <input type="number" name="duration" [(ngModel)]="duration" min="5" max="30" required />
+        <span class="sched-field-hint">{{ questionPlanLabel() }}</span>
       </label>
     </div>
 

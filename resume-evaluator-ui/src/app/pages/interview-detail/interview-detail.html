@@ -118,6 +118,7 @@
         <div><span>Time</span><strong>{{ item.time || '—' }}</strong></div>
         <div><span>Timezone</span><strong>{{ item.timezone }}</strong></div>
         <div><span>Duration</span><strong>{{ item.durationMinutes }} minutes</strong></div>
+        <div><span>Questions</span><strong>{{ questionProgress(item) }}</strong></div>
         <div><span>Link expires</span><strong>{{ item.expiresAt | date: 'medium' }}</strong></div>
         <div><span>Interviewer</span><strong>{{ item.interviewer || 'Voice AI Agent' }}</strong></div>
         <div>

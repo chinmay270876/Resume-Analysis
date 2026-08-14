@@ -20,6 +20,7 @@ import {
   CandidateInterviewSession,
   InterviewAnswerEntry,
   InterviewTokenResult,
+  MAX_INTERVIEW_QUESTIONS,
 } from '../../models';
 
 type ConnectionStatus = 'Connecting' | 'Live' | 'Completed' | 'Error';
@@ -78,10 +79,12 @@ export class CandidateInterviewComponent implements OnInit, OnDestroy {
     return list[idx] || null;
   });
 
+  protected readonly totalQuestions = MAX_INTERVIEW_QUESTIONS;
+  protected readonly progressDots = Array.from({ length: MAX_INTERVIEW_QUESTIONS }, (_, i) => i);
+
   protected readonly questionProgressLabel = computed(() => {
-    const total = this.questions().length;
-    if (!total) return 'No questions available';
-    return `Question ${this.currentIndex() + 1} of ${total}`;
+    if (!this.questions().length) return 'No questions available';
+    return `Question ${this.currentIndex() + 1} of ${this.totalQuestions}`;
   });
 
   protected readonly transcriptPlaceholder = computed(() => {
@@ -95,7 +98,7 @@ export class CandidateInterviewComponent implements OnInit, OnDestroy {
   });
 
   protected readonly submitButtonLabel = computed(() => {
-    const isLast = this.currentIndex() + 1 >= this.questions().length;
+    const isLast = this.isLastQuestion();
     if (this.saving()) {
       return isLast ? 'Finishing…' : 'Submitting…';
     }
@@ -160,6 +163,11 @@ export class CandidateInterviewComponent implements OnInit, OnDestroy {
     this.waveformBars.set(bars);
   }
 
+  private isLastQuestion(): boolean {
+    const n = Math.min(this.questions().length, MAX_INTERVIEW_QUESTIONS);
+    return n > 0 && this.currentIndex() + 1 >= n;
+  }
+
   protected toggleMic(): void {
     if (this.transcriptLocked()) return;
     const nextEnabled = !this.micEnabled();
@@ -197,7 +205,7 @@ export class CandidateInterviewComponent implements OnInit, OnDestroy {
       answeredAt: new Date().toISOString(),
     };
 
-    const isLast = this.currentIndex() + 1 >= this.questions().length;
+    const isLast = this.isLastQuestion();
     this.saving.set(true);
     this.stopSpeechRecognition(false);
 
@@ -280,7 +288,7 @@ export class CandidateInterviewComponent implements OnInit, OnDestroy {
       );
       this.session.set(result.interview || null);
 
-      const qs = this.resolveQuestions(result);
+      const qs = this.resolveQuestions(result).slice(0, MAX_INTERVIEW_QUESTIONS);
       this.questions.set(qs);
       this.currentIndex.set(this.initialQuestionIndex(qs, result.interview));
       this.resetTranscript();
