@@ -1,4 +1,4 @@
-Generate an interview plan of questions that an AI Interview Bot will ask during a live ~25-minute interview.
+Generate exactly 10 high-value technical and situational interview questions tailored to the candidate's resume and job role.
 
 Return ONLY interview questions. Do NOT generate candidate answers, AI answers, fake conversation, transcript, evaluation, recommendation, or Selected/Rejected decisions.
 
@@ -23,24 +23,24 @@ Compare resume skills/experience against JD requirements. Generate questions abo
 or weak areas (e.g. JD requires Kubernetes + Kafka but resume only shows Docker).
 
 ================================================================================
-QUESTION DISTRIBUTION (~20–30 total)
+QUESTION DISTRIBUTION (exactly 10 total)
 ================================================================================
 
-1. Introduction — exactly 2 questions
+1. Introduction — exactly 1 question
    Examples: introduce yourself; walk through current role.
 
-2. Current Project — exactly 5 questions
+2. Current Project — exactly 2 questions
    Must reference the actual current/latest project from the resume when available
    (architecture, challenges, scale/users, personal contribution, tech choices).
 
-3. JD Technical Questions — 10 to 12 questions
+3. JD Technical Questions — exactly 3 questions
    ONLY from technologies/skills/frameworks in the JD. Adapt difficulty to JD seniority.
 
-4. Resume + JD Combined — 4 to 5 questions
+4. Resume + JD Combined — exactly 2 questions
    Connect resume experience to JD requirements (overlap AND gaps).
    Include gap questions when skills are missing/weak on the resume.
 
-5. Behavioural — exactly 3 questions
+5. Behavioural — exactly 1 question
    Aligned with soft skills / responsibilities implied by the JD
    (production issues, deadlines, teamwork, ownership).
 
@@ -61,7 +61,7 @@ Candidate Resume Analysis:
 OUTPUT RULES
 ================================================================================
 
-1. Produce approximately 20–30 questions total for ~25 minutes.
+1. Produce exactly 10 questions total. Do not generate more or fewer.
 2. Use these exact sectionName values in order:
    "Introduction", "Current Project", "JD Technical Questions",
    "Resume + JD Combined", "Behavioural", "Closing"
@@ -79,7 +79,7 @@ Return ONLY a valid JSON object with this exact shape:
 {
   "interviewTitle": "",
   "estimatedDuration": "25 minutes",
-  "totalQuestions": 25,
+  "totalQuestions": 10,
   "sections": [
     {
       "sectionName": "Introduction",

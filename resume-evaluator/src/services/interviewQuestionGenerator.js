@@ -5,6 +5,7 @@ const path = require("path");
 
 const templateCache = new Map();
 const VALID_DIFFICULTIES = new Set(["Easy", "Medium", "Hard"]);
+const MAX_INTERVIEW_QUESTIONS = 10;
 
 const CANONICAL_SECTIONS = [
     "Introduction",
@@ -139,6 +140,19 @@ function normalizeInterview(raw, jdAnalysis) {
         return aOrder - bOrder;
     });
 
+    // Hard cap so the live interview never exceeds MAX_INTERVIEW_QUESTIONS.
+    let remaining = MAX_INTERVIEW_QUESTIONS;
+    for (let i = 0; i < sections.length; i += 1) {
+        if (remaining <= 0) {
+            sections.splice(i);
+            break;
+        }
+        if (sections[i].questions.length > remaining) {
+            sections[i].questions = sections[i].questions.slice(0, remaining);
+        }
+        remaining -= sections[i].questions.length;
+    }
+
     // Re-number after sort so questionNo stays sequential in display order.
     let renumber = 1;
     for (const section of sections) {
@@ -162,7 +176,7 @@ function normalizeInterview(raw, jdAnalysis) {
     return {
         interviewTitle,
         estimatedDuration,
-        totalQuestions: Number(raw?.totalQuestions) || totalQuestions,
+        totalQuestions,
         sections,
     };
 }
@@ -208,7 +222,8 @@ async function generateInterviewQuestions(jdAnalysis, resumeAnalysis = null) {
 
         const systemMessage =
             `You are an expert technical interviewer designing the interview plan for an AI Interview Bot. ` +
-            `Create a ~25-minute interview for the ${role} role (${level}) with 20–30 questions only. ` +
+            `Generate exactly 10 high-value technical and situational interview questions tailored to the candidate's resume and job role. ` +
+            `Create a focused interview for the ${role} role (${level}) with exactly ${MAX_INTERVIEW_QUESTIONS} questions — no more, no fewer. ` +
             `Priority: (1) Job Description ~70–80%, (2) personalize from the candidate resume` +
             `${hasResume ? "" : " (resume not provided — stay JD-focused)"}, ` +
             `(3) probe Resume vs JD skill gaps. ` +
@@ -306,9 +321,9 @@ async function generateInterviewQuestions(jdAnalysis, resumeAnalysis = null) {
             throw err;
         }
 
-        interview.totalQuestions = interview.sections.reduce(
-            (sum, s) => sum + s.questions.length,
-            0
+        interview.totalQuestions = Math.min(
+            interview.sections.reduce((sum, s) => sum + s.questions.length, 0),
+            MAX_INTERVIEW_QUESTIONS
         );
 
         if (process.env.NODE_ENV !== "production") {
@@ -334,4 +349,5 @@ async function generateInterviewQuestions(jdAnalysis, resumeAnalysis = null) {
 
 module.exports = {
     generateInterviewQuestions,
+    MAX_INTERVIEW_QUESTIONS,
 };

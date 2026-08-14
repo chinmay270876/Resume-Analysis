@@ -38,6 +38,7 @@ const DEFAULT_DURATION_MINUTES = 25;
 const DEFAULT_TIMEZONE = "UTC";
 const LINK_EXTEND_HOURS = 24;
 const MAX_SESSION_MINUTES = 30;
+const MAX_INTERVIEW_QUESTIONS = 10;
 
 /** Standard reminder offsets (minutes before scheduledAt). Kept in sync with reminder service defaults. */
 const REMINDER_OFFSET_MINUTES = Object.freeze({
@@ -185,7 +186,7 @@ function extractInterviewQuestions(interview) {
         );
     }
 
-    return questions.map((q, idx) => ({
+    return questions.slice(0, MAX_INTERVIEW_QUESTIONS).map((q, idx) => ({
         ...q,
         questionNo: idx + 1,
     }));
@@ -1533,6 +1534,7 @@ module.exports = {
     INTERVIEW_RESULTS,
     POST_COMPLETION_STATUSES,
     DEFAULT_DURATION_MINUTES,
+    MAX_INTERVIEW_QUESTIONS,
     MAX_SESSION_MINUTES,
     LINK_EXPIRY_HOURS,
     LINK_EXTEND_HOURS,
