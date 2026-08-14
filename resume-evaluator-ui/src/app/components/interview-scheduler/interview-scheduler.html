@@ -2,10 +2,10 @@
   <div class="sched-header" *ngIf="showHeader()">
     <span class="sched-badge">Interview Scheduling</span>
     <h2>Schedule Interview</h2>
-    <p>Enter the candidate details, then set date, time, and timezone to send the invitation.</p>
+    <p>Enter the candidate details, then pick a date and time and send the invitation.</p>
   </div>
   <p class="sched-embedded-hint" *ngIf="!showHeader()">
-    Enter the candidate details, then set date, time, and timezone to send the invitation.
+    Enter the candidate details, then pick a date and time and send the invitation.
   </p>
 
   <div *ngIf="createdInterview() as created" class="sched-success">
@@ -38,14 +38,14 @@
         <input type="email" name="candidateEmail" [(ngModel)]="candidateEmail" required autocomplete="email" />
       </label>
 
-      <label class="sched-field">
-        <span>Date</span>
-        <input type="date" name="date" [(ngModel)]="date" required />
-      </label>
-
-      <label class="sched-field">
-        <span>Time</span>
-        <input type="time" name="time" [(ngModel)]="time" required />
+      <label class="sched-field sched-field-datetime">
+        <span>Date &amp; Time</span>
+        <input
+          type="datetime-local"
+          name="scheduledDateTime"
+          [(ngModel)]="scheduledDateTime"
+          required
+          autocomplete="off" />
       </label>
 
       <label class="sched-field">
@@ -57,7 +57,7 @@
 
       <label class="sched-field">
         <span>Duration (minutes)</span>
-        <input type="number" name="duration" [(ngModel)]="duration" min="5" max="480" required />
+        <input type="number" name="duration" [(ngModel)]="duration" min="5" max="30" required />
       </label>
     </div>
 

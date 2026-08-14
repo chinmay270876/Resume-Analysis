@@ -3,6 +3,7 @@ import {
   OnDestroy,
   OnInit,
   PLATFORM_ID,
+  computed,
   inject,
   signal,
 } from '@angular/core';
@@ -18,9 +19,12 @@ import {
   CandidateInterviewQuestion,
   CandidateInterviewSession,
   InterviewAnswerEntry,
+  InterviewTokenResult,
 } from '../../models';
 
 type ConnectionStatus = 'Connecting' | 'Live' | 'Completed' | 'Error';
+
+const MAX_SESSION_MINUTES = 30;
 
 @Component({
   selector: 'app-candidate-interview',
@@ -41,11 +45,16 @@ export class CandidateInterviewComponent implements OnInit, OnDestroy {
   private hmsActions: any = null;
   private hmsStore: any = null;
   private recognition: any = null;
+  private committedTranscript = '';
   private answerStartedAt = 0;
   private interviewId = '';
+  private timerInterval: ReturnType<typeof setInterval> | null = null;
+  private timeLimitHandled = false;
+  private speakingUtterance: SpeechSynthesisUtterance | null = null;
 
   protected readonly loading = signal(true);
   protected readonly error = signal<string | null>(null);
+  protected readonly roomWarning = signal<string | null>(null);
   protected readonly connectionStatus = signal<ConnectionStatus>('Connecting');
   protected readonly micEnabled = signal(true);
   protected readonly audioLevel = signal(0);
@@ -56,25 +65,69 @@ export class CandidateInterviewComponent implements OnInit, OnDestroy {
   protected readonly liveTranscript = signal('');
   protected readonly saving = signal(false);
   protected readonly listening = signal(false);
+  protected readonly speaking = signal(false);
   protected readonly session = signal<CandidateInterviewSession | null>(null);
+  protected readonly linkExpired = signal(false);
+  protected readonly timeLimitReached = signal(false);
+  protected readonly transcriptLocked = signal(false);
+  protected readonly remainingMs = signal(0);
+
+  protected readonly currentQuestion = computed(() => {
+    const list = this.questions();
+    const idx = this.currentIndex();
+    return list[idx] || null;
+  });
+
+  protected readonly questionProgressLabel = computed(() => {
+    const total = this.questions().length;
+    if (!total) return 'No questions available';
+    return `Question ${this.currentIndex() + 1} of ${total}`;
+  });
+
+  protected readonly transcriptPlaceholder = computed(() => {
+    if (!this.micEnabled()) {
+      return 'Microphone is muted. Unmute to speak your answer.';
+    }
+    if (this.listening()) {
+      return 'Listening... Speak your answer clearly';
+    }
+    return 'Speak your answer clearly — it will be transcribed automatically.';
+  });
+
+  protected readonly submitButtonLabel = computed(() => {
+    const isLast = this.currentIndex() + 1 >= this.questions().length;
+    if (this.saving()) {
+      return isLast ? 'Finishing…' : 'Submitting…';
+    }
+    return isLast ? 'Submit & Finish' : 'Submit Answer';
+  });
+
+  protected readonly timerLabel = computed(() => {
+    const total = Math.max(0, Math.floor(this.remainingMs() / 1000));
+    const minutes = Math.floor(total / 60);
+    const seconds = total % 60;
+    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  });
+
+  protected readonly timerUrgent = computed(() => this.remainingMs() > 0 && this.remainingMs() <= 60_000);
 
   ngOnInit(): void {
     this.title.setTitle('Candidate Interview');
 
     if (!isPlatformBrowser(this.platformId)) {
-      this.loading.set(false);
       return;
     }
 
     this.routeSub = this.route.paramMap
       .pipe(
-        map((params) => params.get('id')),
+        map((params) => params.get('id') || this.route.snapshot.queryParamMap.get('id')),
         distinctUntilChanged()
       )
       .subscribe((id) => {
         if (!id) {
           this.loading.set(false);
           this.error.set('Interview ID is missing.');
+          this.connectionStatus.set('Error');
           return;
         }
         this.interviewId = id;
@@ -85,20 +138,15 @@ export class CandidateInterviewComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.routeSub?.unsubscribe();
     this.tokenSub?.unsubscribe();
+    this.clearSessionTimer();
+    this.cancelSpeech();
     this.stopSpeechRecognition();
     this.teardownHms();
   }
 
-  protected get currentQuestion(): CandidateInterviewQuestion | null {
-    const list = this.questions();
-    const idx = this.currentIndex();
-    return list[idx] || null;
-  }
-
-  protected get questionProgressLabel(): string {
-    const total = this.questions().length;
-    if (!total) return 'No questions available';
-    return `Question ${this.currentIndex() + 1} of ${total}`;
+  private resetTranscript(): void {
+    this.committedTranscript = '';
+    this.liveTranscript.set('');
   }
 
   private updateWaveform(level: number): void {
@@ -112,26 +160,28 @@ export class CandidateInterviewComponent implements OnInit, OnDestroy {
     this.waveformBars.set(bars);
   }
 
-  protected async toggleMic(): Promise<void> {
-    if (!this.hmsActions || !this.hmsStore) return;
-    try {
-      const { selectIsLocalAudioEnabled } = await import('@100mslive/hms-video-store');
-      const enabled = !!this.hmsStore.getState(selectIsLocalAudioEnabled);
-      await this.hmsActions.setLocalAudioEnabled(!enabled);
-      this.micEnabled.set(!enabled);
-      if (!enabled) {
-        this.startSpeechRecognition();
-      } else {
-        this.stopSpeechRecognition(false);
-      }
-    } catch (err) {
-      console.error('Mic toggle failed', err);
+  protected toggleMic(): void {
+    if (this.transcriptLocked()) return;
+    const nextEnabled = !this.micEnabled();
+    this.micEnabled.set(nextEnabled);
+
+    if (nextEnabled) {
+      this.startSpeechRecognition();
+    } else {
+      this.stopSpeechRecognition(false);
+    }
+
+    const actions = this.hmsActions;
+    if (actions?.setLocalAudioEnabled) {
+      void Promise.resolve(actions.setLocalAudioEnabled(nextEnabled)).catch((err: unknown) => {
+        console.warn('Live room mic sync failed; local mute still applied.', err);
+      });
     }
   }
 
   protected async submitCurrentAnswer(advance = true): Promise<void> {
-    const question = this.currentQuestion;
-    if (!question || !this.interviewId) return;
+    const question = this.currentQuestion();
+    if (!question || !this.interviewId || this.saving() || this.transcriptLocked()) return;
 
     const transcript = this.liveTranscript().trim();
     const durationSeconds =
@@ -147,30 +197,45 @@ export class CandidateInterviewComponent implements OnInit, OnDestroy {
       answeredAt: new Date().toISOString(),
     };
 
+    const isLast = this.currentIndex() + 1 >= this.questions().length;
     this.saving.set(true);
     this.stopSpeechRecognition(false);
 
     this.interviewService
-      .saveInterviewAnswers(this.interviewId, { answers: [answer] })
+      .saveInterviewAnswers(this.interviewId, {
+        answers: [answer],
+        completed: Boolean(advance && isLast),
+      })
       .subscribe({
         next: () => {
           this.saving.set(false);
-          if (!advance) return;
-          const next = this.currentIndex() + 1;
-          if (next >= this.questions().length) {
-            void this.finishInterview();
-          } else {
-            this.currentIndex.set(next);
-            this.liveTranscript.set('');
-            this.answerStartedAt = Date.now();
-            this.startSpeechRecognition();
+          if (!advance) {
+            if (this.micEnabled()) this.startSpeechRecognition();
+            return;
           }
+          if (isLast) {
+            this.clearSessionTimer();
+            this.cancelSpeech();
+            this.connectionStatus.set('Completed');
+            void this.leaveRoom();
+            return;
+          }
+          this.currentIndex.set(this.currentIndex() + 1);
+          this.resetTranscript();
+          this.answerStartedAt = Date.now();
+          this.speakCurrentQuestion();
         },
         error: (err: HttpErrorResponse) => {
           this.saving.set(false);
-          this.error.set(extractApiErrorMessage(err, 'Failed to save answer.'));
+          this.roomWarning.set(extractApiErrorMessage(err, 'Failed to save answer.'));
+          if (this.micEnabled()) this.startSpeechRecognition();
         },
       });
+  }
+
+  protected replayQuestion(): void {
+    if (this.transcriptLocked() || this.connectionStatus() !== 'Live') return;
+    this.speakCurrentQuestion(true);
   }
 
   protected async endCall(): Promise<void> {
@@ -180,52 +245,171 @@ export class CandidateInterviewComponent implements OnInit, OnDestroy {
   private async bootstrap(id: string): Promise<void> {
     this.loading.set(true);
     this.error.set(null);
+    this.roomWarning.set(null);
+    this.linkExpired.set(false);
+    this.timeLimitReached.set(false);
+    this.transcriptLocked.set(false);
+    this.timeLimitHandled = false;
+    this.clearSessionTimer();
+    this.cancelSpeech();
     this.connectionStatus.set('Connecting');
     this.teardownHms();
 
     this.tokenSub?.unsubscribe();
     this.tokenSub = this.interviewService.getInterviewToken(id).subscribe({
-      next: async (result) => {
-        try {
-          if (!result?.success || !result.token) {
-            this.loading.set(false);
-            this.error.set(result?.error || 'Unable to join interview room.');
-            this.connectionStatus.set('Error');
-            return;
-          }
-
-          this.candidateName.set(result.candidateName || result.interview?.candidateName || 'Candidate');
-          this.session.set(result.interview || null);
-          const qs = Array.isArray(result.interview?.questions)
-            ? result.interview!.questions
-            : [];
-          this.questions.set(qs);
-          this.currentIndex.set(0);
-          this.liveTranscript.set('');
-          this.answerStartedAt = Date.now();
-
-          await this.joinHmsRoom(result.token, this.candidateName());
-          this.loading.set(false);
-          this.startSpeechRecognition();
-        } catch (err: any) {
-          this.loading.set(false);
-          this.connectionStatus.set('Error');
-          this.error.set(err?.message || 'Failed to connect to the interview room.');
-        }
+      next: (result) => {
+        void this.onTokenLoaded(result);
       },
       error: (err: HttpErrorResponse) => {
         this.loading.set(false);
         this.connectionStatus.set('Error');
+        if (this.isLinkExpiredError(err)) {
+          this.linkExpired.set(true);
+          this.error.set(null);
+          return;
+        }
         this.error.set(extractApiErrorMessage(err, 'Failed to start interview.'));
       },
     });
+  }
+
+  private async onTokenLoaded(result: InterviewTokenResult): Promise<void> {
+    try {
+      this.candidateName.set(
+        result.candidateName || result.interview?.candidateName || 'Candidate'
+      );
+      this.session.set(result.interview || null);
+
+      const qs = this.resolveQuestions(result);
+      this.questions.set(qs);
+      this.currentIndex.set(this.initialQuestionIndex(qs, result.interview));
+      this.resetTranscript();
+      this.answerStartedAt = Date.now();
+      this.loading.set(false);
+      this.connectionStatus.set('Live');
+      this.startSessionTimer(result.interview || null);
+      this.speakCurrentQuestion();
+
+      if (result.hmsError && !result.token) {
+        this.roomWarning.set(
+          'Live room audio is unavailable. You can still complete the interview with your microphone.'
+        );
+      }
+
+      if (result.token) {
+        try {
+          await this.joinHmsRoom(result.token, this.candidateName());
+        } catch (err: any) {
+          this.roomWarning.set(
+            this.friendlyRoomError(err, 'Live room audio could not connect. Continue speaking — answers are still recorded.')
+          );
+        }
+      }
+    } catch (err: any) {
+      this.loading.set(false);
+      this.connectionStatus.set('Error');
+      this.error.set(err?.message || 'Failed to start the interview.');
+    }
+  }
+
+  private resolveQuestions(result: InterviewTokenResult): CandidateInterviewQuestion[] {
+    const interview = result.interview;
+    const fromPayload = this.flattenQuestions(result.questions);
+    if (fromPayload.length) return fromPayload;
+
+    const fromInterview = this.flattenQuestions(interview?.questions);
+    if (fromInterview.length) return fromInterview;
+
+    return this.flattenQuestions(interview?.interviewJson);
+  }
+
+  private flattenQuestions(source: unknown): CandidateInterviewQuestion[] {
+    const out: CandidateInterviewQuestion[] = [];
+
+    const push = (raw: unknown, sectionName = '') => {
+      if (raw && typeof raw === 'object' && Array.isArray((raw as { questions?: unknown }).questions)) {
+        const nested = raw as { questions: unknown[]; sectionName?: string };
+        nested.questions.forEach((item) => push(item, nested.sectionName || sectionName));
+        return;
+      }
+
+      const text = this.questionText(raw);
+      if (!text) return;
+      const obj = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+      out.push({
+        questionNo: out.length + 1,
+        question: text,
+        category: typeof obj['category'] === 'string' ? obj['category'] : null,
+        difficulty: typeof obj['difficulty'] === 'string' ? obj['difficulty'] : null,
+        estimatedTime: typeof obj['estimatedTime'] === 'string' ? obj['estimatedTime'] : null,
+        sectionName:
+          (typeof obj['sectionName'] === 'string' ? obj['sectionName'] : null) || sectionName || null,
+      });
+    };
+
+    if (Array.isArray(source)) {
+      source.forEach((item) => push(item));
+      return out;
+    }
+
+    if (source && typeof source === 'object') {
+      const obj = source as Record<string, unknown>;
+      if (Array.isArray(obj['sections'])) {
+        (obj['sections'] as unknown[]).forEach((item) => push(item));
+        return out;
+      }
+      if (Array.isArray(obj['questions'])) {
+        (obj['questions'] as unknown[]).forEach((item) => push(item));
+        return out;
+      }
+      if (obj['interview']) {
+        return this.flattenQuestions(obj['interview']);
+      }
+    }
+
+    return out;
+  }
+
+  private questionText(raw: unknown): string {
+    if (typeof raw === 'string') return raw.trim();
+    if (!raw || typeof raw !== 'object') return '';
+    const obj = raw as Record<string, unknown>;
+    for (const key of ['question', 'text', 'prompt', 'q']) {
+      const value = obj[key];
+      if (typeof value === 'string' && value.trim()) return value.trim();
+    }
+    return '';
+  }
+
+  private initialQuestionIndex(
+    questions: CandidateInterviewQuestion[],
+    session: CandidateInterviewSession | null | undefined
+  ): number {
+    if (!questions.length) return 0;
+    const answered = new Set(
+      (session?.interviewDetails?.answers || [])
+        .map((a) => Number(a.questionNo))
+        .filter((n) => Number.isFinite(n))
+    );
+    const next = questions.findIndex((q) => !answered.has(q.questionNo));
+    return next === -1 ? Math.max(0, questions.length - 1) : next;
+  }
+
+  private friendlyRoomError(err: unknown, fallback: string): string {
+    const message =
+      err && typeof err === 'object' && 'message' in err
+        ? String((err as { message?: unknown }).message || '')
+        : '';
+    if (/invalid id/i.test(message)) {
+      return 'Live room audio could not connect (invalid room). Continue speaking — answers are still recorded.';
+    }
+    return message && message.length < 180 ? message : fallback;
   }
 
   private async joinHmsRoom(authToken: string, userName: string): Promise<void> {
     const {
       HMSReactiveStore,
       selectIsConnectedToRoom,
-      selectIsLocalAudioEnabled,
       selectLocalPeer,
       selectPeerAudioByID,
     } = await import('@100mslive/hms-video-store');
@@ -244,18 +428,14 @@ export class CandidateInterviewComponent implements OnInit, OnDestroy {
       }
     }, selectIsConnectedToRoom);
 
-    const unsubMic = this.hmsStore.subscribe((enabled: boolean) => {
-      this.micEnabled.set(!!enabled);
-    }, selectIsLocalAudioEnabled);
-
-    this.hmsUnsubscribers.push(unsubConnected, unsubMic);
+    this.hmsUnsubscribers.push(unsubConnected);
 
     await this.hmsActions.join({
       userName: userName || 'Candidate',
       authToken,
       settings: {
-        isAudioMuted: false,
-        isVideoMuted: false,
+        isAudioMuted: !this.micEnabled(),
+        isVideoMuted: true,
       },
       rememberDeviceSelection: true,
     });
@@ -270,14 +450,29 @@ export class CandidateInterviewComponent implements OnInit, OnDestroy {
       this.hmsUnsubscribers.push(unsubLevel);
     }
 
+    try {
+      await this.hmsActions.setLocalAudioEnabled(this.micEnabled());
+    } catch {
+      // local mute state already applied
+    }
+
     this.connectionStatus.set('Live');
   }
 
   private startSpeechRecognition(): void {
     if (!isPlatformBrowser(this.platformId)) return;
+    if (!this.micEnabled() || this.transcriptLocked() || this.speaking()) return;
+
     const SpeechRecognition =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
+      if (!this.roomWarning()?.includes('Live transcription is not supported')) {
+        this.roomWarning.set(
+          [this.roomWarning(), 'Live transcription is not supported in this browser. Use Chrome or Edge.']
+            .filter(Boolean)
+            .join(' ')
+        );
+      }
       return;
     }
 
@@ -290,7 +485,13 @@ export class CandidateInterviewComponent implements OnInit, OnDestroy {
     recognition.onstart = () => this.listening.set(true);
     recognition.onend = () => {
       this.listening.set(false);
-      if (this.connectionStatus() === 'Live' && this.micEnabled()) {
+      if (
+        this.connectionStatus() === 'Live' &&
+        this.micEnabled() &&
+        !this.transcriptLocked() &&
+        !this.speaking() &&
+        this.recognition === recognition
+      ) {
         try {
           recognition.start();
         } catch {
@@ -298,20 +499,34 @@ export class CandidateInterviewComponent implements OnInit, OnDestroy {
         }
       }
     };
-    recognition.onerror = () => this.listening.set(false);
+    recognition.onerror = (event: { error?: string }) => {
+      const code = event?.error || '';
+      if (code === 'not-allowed' || code === 'service-not-allowed') {
+        this.micEnabled.set(false);
+        this.listening.set(false);
+        this.roomWarning.set('Microphone permission was blocked. Allow the mic to speak your answers.');
+        return;
+      }
+      if (code === 'aborted') {
+        this.listening.set(false);
+        return;
+      }
+      this.listening.set(false);
+    };
     recognition.onresult = (event: any) => {
       let interim = '';
-      let finalText = this.liveTranscript();
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i];
         const text = result[0]?.transcript || '';
         if (result.isFinal) {
-          finalText = `${finalText} ${text}`.trim();
+          this.committedTranscript = `${this.committedTranscript} ${text}`.trim();
         } else {
           interim += text;
         }
       }
-      this.liveTranscript.set(`${finalText}${interim ? ` ${interim}` : ''}`.trim());
+      this.liveTranscript.set(
+        `${this.committedTranscript}${interim ? ` ${interim}` : ''}`.trim()
+      );
     };
 
     try {
@@ -322,7 +537,7 @@ export class CandidateInterviewComponent implements OnInit, OnDestroy {
     }
   }
 
-  private stopSpeechRecognition(clear = true): void {
+  private stopSpeechRecognition(_clear = true): void {
     if (this.recognition) {
       try {
         this.recognition.onend = null;
@@ -333,15 +548,12 @@ export class CandidateInterviewComponent implements OnInit, OnDestroy {
       this.recognition = null;
     }
     this.listening.set(false);
-    if (clear) {
-      // keep transcript unless explicitly clearing elsewhere
-    }
   }
 
   private async finishInterview(): Promise<void> {
-    if (this.connectionStatus() === 'Completed') return;
+    if (this.connectionStatus() === 'Completed' || this.timeLimitReached()) return;
 
-    const question = this.currentQuestion;
+    const question = this.currentQuestion();
     const transcript = this.liveTranscript().trim();
     const answers: InterviewAnswerEntry[] = [];
     if (question && transcript) {
@@ -354,6 +566,8 @@ export class CandidateInterviewComponent implements OnInit, OnDestroy {
     }
 
     this.saving.set(true);
+    this.clearSessionTimer();
+    this.cancelSpeech();
     this.stopSpeechRecognition();
 
     this.interviewService
@@ -369,8 +583,8 @@ export class CandidateInterviewComponent implements OnInit, OnDestroy {
         },
         error: async (err: HttpErrorResponse) => {
           this.saving.set(false);
-          this.error.set(extractApiErrorMessage(err, 'Failed to complete interview.'));
           this.connectionStatus.set('Completed');
+          this.roomWarning.set(extractApiErrorMessage(err, 'Failed to complete interview.'));
           await this.leaveRoom();
         },
       });
@@ -398,5 +612,154 @@ export class CandidateInterviewComponent implements OnInit, OnDestroy {
     this.hmsUnsubscribers = [];
     this.hmsActions = null;
     this.hmsStore = null;
+  }
+
+  private isLinkExpiredError(err: HttpErrorResponse): boolean {
+    const body = err?.error;
+    if (err.status === 403 && body && typeof body === 'object') {
+      const code = (body as { code?: unknown }).code;
+      const message = (body as { error?: unknown; message?: unknown }).error
+        || (body as { message?: unknown }).message;
+      if (code === 'LINK_EXPIRED') return true;
+      if (typeof message === 'string' && /link expired/i.test(message)) return true;
+    }
+    return err.status === 403 && /link expired/i.test(extractApiErrorMessage(err, ''));
+  }
+
+  private sessionCapMinutes(session: CandidateInterviewSession | null): number {
+    const duration = Number(session?.sessionCapMinutes ?? session?.durationMinutes ?? MAX_SESSION_MINUTES);
+    if (!Number.isFinite(duration) || duration <= 0) return MAX_SESSION_MINUTES;
+    return Math.min(Math.round(duration), MAX_SESSION_MINUTES);
+  }
+
+  private startSessionTimer(session: CandidateInterviewSession | null): void {
+    this.clearSessionTimer();
+    const capMs = this.sessionCapMinutes(session) * 60 * 1000;
+    const startedRaw = session?.interviewDetails?.startedAt;
+    const startedAt = startedRaw ? new Date(startedRaw).getTime() : Date.now();
+    const endsAt = (Number.isFinite(startedAt) ? startedAt : Date.now()) + capMs;
+
+    const tick = () => {
+      const remaining = Math.max(0, endsAt - Date.now());
+      this.remainingMs.set(remaining);
+      if (remaining <= 0) {
+        this.clearSessionTimer();
+        void this.onTimeLimitReached();
+      }
+    };
+
+    tick();
+    if (this.remainingMs() > 0) {
+      this.timerInterval = setInterval(tick, 250);
+    }
+  }
+
+  private clearSessionTimer(): void {
+    if (this.timerInterval) {
+      clearInterval(this.timerInterval);
+      this.timerInterval = null;
+    }
+  }
+
+  private async onTimeLimitReached(): Promise<void> {
+    if (this.timeLimitHandled || this.connectionStatus() === 'Completed') return;
+    this.timeLimitHandled = true;
+    this.transcriptLocked.set(true);
+    this.timeLimitReached.set(true);
+    this.cancelSpeech();
+    this.stopSpeechRecognition();
+
+    const question = this.currentQuestion();
+    const transcript = this.liveTranscript().trim();
+    const answers: InterviewAnswerEntry[] = [];
+    if (question) {
+      answers.push({
+        questionNo: question.questionNo,
+        question: question.question,
+        transcript,
+        answeredAt: new Date().toISOString(),
+      });
+    }
+
+    this.saving.set(true);
+    this.interviewService
+      .saveInterviewAnswers(this.interviewId, {
+        answers,
+        completed: true,
+      })
+      .subscribe({
+        next: async () => {
+          this.saving.set(false);
+          this.connectionStatus.set('Completed');
+          await this.leaveRoom();
+        },
+        error: async () => {
+          this.saving.set(false);
+          this.connectionStatus.set('Completed');
+          await this.leaveRoom();
+        },
+      });
+  }
+
+  private speakCurrentQuestion(replay = false): void {
+    if (!isPlatformBrowser(this.platformId) || this.transcriptLocked()) return;
+    const question = this.currentQuestion();
+    const text = question?.question?.trim();
+    if (!text) {
+      if (this.micEnabled()) this.startSpeechRecognition();
+      return;
+    }
+
+    const synth = window.speechSynthesis;
+    if (!synth) {
+      if (this.micEnabled()) this.startSpeechRecognition();
+      return;
+    }
+
+    this.stopSpeechRecognition(false);
+    this.cancelSpeech();
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 0.95;
+    utterance.pitch = 1;
+    utterance.lang = 'en-US';
+    this.speakingUtterance = utterance;
+    this.speaking.set(true);
+
+    const resumeListening = () => {
+      if (this.speakingUtterance !== utterance) return;
+      this.speakingUtterance = null;
+      this.speaking.set(false);
+      if (
+        this.connectionStatus() === 'Live' &&
+        this.micEnabled() &&
+        !this.transcriptLocked()
+      ) {
+        this.startSpeechRecognition();
+      }
+    };
+
+    utterance.onend = resumeListening;
+    utterance.onerror = resumeListening;
+
+    window.setTimeout(() => {
+      if (this.speakingUtterance !== utterance || this.transcriptLocked()) return;
+      try {
+        synth.speak(utterance);
+      } catch {
+        resumeListening();
+      }
+    }, replay ? 0 : 100);
+  }
+
+  private cancelSpeech(): void {
+    this.speakingUtterance = null;
+    this.speaking.set(false);
+    if (!isPlatformBrowser(this.platformId)) return;
+    try {
+      window.speechSynthesis?.cancel();
+    } catch {
+      // ignore
+    }
   }
 }

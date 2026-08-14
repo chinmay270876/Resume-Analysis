@@ -553,7 +553,11 @@ export interface ScheduledInterview {
   time: string | null;
   timezone: string;
   durationMinutes: number;
+  sessionCapMinutes?: number;
   scheduledAt: string | null;
+  expiresAt?: string | null;
+  linkExpired?: boolean;
+  canExtendLink?: boolean;
   meetingLink: string;
   status: InterviewStatus | string;
   result?: InterviewResult | string;
@@ -627,7 +631,9 @@ export interface CandidateInterviewSession {
   time?: string | null;
   timezone?: string;
   durationMinutes?: number;
+  sessionCapMinutes?: number;
   scheduledAt?: string | null;
+  expiresAt?: string | null;
   status?: string;
   questions?: CandidateInterviewQuestion[];
   interviewJson?: StructuredInterview | Record<string, unknown> | null;
@@ -638,10 +644,13 @@ export interface CandidateInterviewSession {
 
 export interface InterviewTokenResult {
   success: boolean;
-  token?: string;
-  roomId?: string;
+  token?: string | null;
+  roomId?: string | null;
   candidateName?: string;
   interview?: CandidateInterviewSession;
+  questions?: CandidateInterviewQuestion[];
+  hmsError?: string | null;
+  code?: string;
   message?: string;
   error?: string;
 }

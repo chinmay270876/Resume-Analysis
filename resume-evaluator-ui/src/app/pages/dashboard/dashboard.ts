@@ -74,8 +74,7 @@ export class Dashboard implements OnInit, OnDestroy {
 
   /** Inline reschedule form state */
   protected readonly rescheduleId = signal<string | null>(null);
-  protected rescheduleDate = '';
-  protected rescheduleTime = '';
+  protected rescheduleDateTime = '';
   protected rescheduleDuration = 25;
 
   ngOnInit(): void {
@@ -309,6 +308,18 @@ export class Dashboard implements OnInit, OnDestroy {
     return items.length > max ? `${shown.join('; ')}…` : shown.join('; ');
   }
 
+  protected formatExpiresAt(value: string | null | undefined): string {
+    if (!value) return '—';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return value;
+    return parsed.toLocaleString(undefined, {
+      day: 'numeric',
+      month: 'short',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  }
+
   protected canAct(interview: ScheduledInterview): boolean {
     return (
       interview.status === 'Scheduled' ||
@@ -317,11 +328,38 @@ export class Dashboard implements OnInit, OnDestroy {
     );
   }
 
+  protected canExtendLink(interview: ScheduledInterview): boolean {
+    if (interview.canExtendLink === false) return false;
+    if (interview.linkExpired) return false;
+    if (!this.canAct(interview)) return false;
+    const expiresAt = interview.expiresAt;
+    if (!expiresAt) return false;
+    const parsed = new Date(expiresAt).getTime();
+    if (Number.isNaN(parsed)) return false;
+    return Date.now() <= parsed;
+  }
+
+  protected extendLink(interview: ScheduledInterview): void {
+    if (!this.canExtendLink(interview)) return;
+    this.actionId.set(interview.id);
+    this.interviewService.extendInterviewLink(interview.id).subscribe({
+      next: () => {
+        this.actionId.set(null);
+        this.toast.show('Interview link extended by 24 hours.', 'success');
+        this.refreshAll();
+      },
+      error: (err: HttpErrorResponse) => {
+        this.actionId.set(null);
+        this.toast.show(extractApiErrorMessage(err, 'Cannot extend an expired link'), 'error');
+        this.refreshAll();
+      },
+    });
+  }
+
   protected openReschedule(interview: ScheduledInterview): void {
     this.rescheduleId.set(interview.id);
-    this.rescheduleDate = interview.date || '';
-    this.rescheduleTime = interview.time || '';
-    this.rescheduleDuration = interview.durationMinutes || 25;
+    this.rescheduleDateTime = this.toDateTimeLocal(interview.date, interview.time);
+    this.rescheduleDuration = Math.min(interview.durationMinutes || 25, 30);
   }
 
   protected closeReschedule(): void {
@@ -329,15 +367,16 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   protected submitReschedule(interview: ScheduledInterview): void {
-    if (!this.rescheduleDate || !this.rescheduleTime) {
+    const { date, time } = this.splitDateTime(this.rescheduleDateTime);
+    if (!date || !time) {
       this.toast.show('Date and time are required.', 'error');
       return;
     }
     this.actionId.set(interview.id);
     this.interviewService
       .rescheduleInterview(interview.id, {
-        date: this.rescheduleDate,
-        time: this.rescheduleTime,
+        date,
+        time,
         duration: this.rescheduleDuration,
         timezone: interview.timezone,
       })
@@ -486,5 +525,21 @@ export class Dashboard implements OnInit, OnDestroy {
 
   protected trackByRank(_index: number, item: InterviewRankedCandidate): string {
     return item.interviewId;
+  }
+
+  private toDateTimeLocal(date: string | null | undefined, time: string | null | undefined): string {
+    const datePart = (date || '').trim();
+    const timePart = (time || '').trim().slice(0, 5);
+    if (!datePart || !timePart) return '';
+    return `${datePart}T${timePart}`;
+  }
+
+  private splitDateTime(value: string): { date: string; time: string } {
+    const raw = (value || '').trim();
+    const [datePart, timePart] = raw.split('T');
+    return {
+      date: (datePart || '').trim(),
+      time: (timePart || '').trim().slice(0, 5),
+    };
   }
 }

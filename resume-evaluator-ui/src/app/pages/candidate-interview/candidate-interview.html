@@ -10,27 +10,63 @@
         <p>{{ candidateName() }}</p>
       </div>
     </div>
+
+    <div
+      *ngIf="!loading() && !linkExpired() && connectionStatus() === 'Live'"
+      class="ci-timer"
+      [class.is-urgent]="timerUrgent()"
+      aria-live="polite"
+      aria-label="Interview countdown timer">
+      {{ timerLabel() }}
+    </div>
+
     <div
       class="ci-status"
       [class.is-live]="connectionStatus() === 'Live'"
       [class.is-done]="connectionStatus() === 'Completed'"
-      [class.is-error]="connectionStatus() === 'Error'">
+      [class.is-error]="connectionStatus() === 'Error' || linkExpired()">
       <span class="ci-status-dot" aria-hidden="true"></span>
-      {{ connectionStatus() }}
+      {{ linkExpired() ? 'Expired' : connectionStatus() }}
     </div>
   </header>
 
   <div *ngIf="loading()" class="ci-state">Connecting to your interview room…</div>
-  <div *ngIf="error()" class="ci-error">{{ error() }}</div>
+  <div *ngIf="error() && !loading() && !linkExpired()" class="ci-error" role="alert">{{ error() }}</div>
+  <div *ngIf="roomWarning() && !error() && !linkExpired()" class="ci-banner" role="status">{{ roomWarning() }}</div>
 
-  <ng-container *ngIf="!loading() && connectionStatus() !== 'Completed'">
+  <section *ngIf="linkExpired()" class="ci-complete ci-expired" role="alert">
+    <h1>Interview Link Expired</h1>
+    <p>This interview link is no longer valid. Please contact the recruiter if you still need to attend.</p>
+  </section>
+
+  <section *ngIf="timeLimitReached()" class="ci-complete" role="status">
+    <h1>Time Limit Reached - Interview Completed</h1>
+    <p>Thank you, {{ candidateName() }}. Your responses captured so far have been submitted.</p>
+    <p class="ci-complete-note">You can safely close this window.</p>
+  </section>
+
+  <ng-container *ngIf="!loading() && !error() && !linkExpired() && !timeLimitReached() && connectionStatus() !== 'Completed'">
     <section class="ci-stage">
-      <p class="ci-progress">{{ questionProgressLabel }}</p>
-      <h1 class="ci-question" *ngIf="currentQuestion as q; else noQuestions">
-        {{ q.question }}
-      </h1>
+      <p class="ci-progress">{{ questionProgressLabel() }}</p>
+      <div class="ci-question-row" *ngIf="currentQuestion() as q; else noQuestions">
+        <h1 class="ci-question question-heading">{{ q.question }}</h1>
+        <button
+          type="button"
+          class="ci-replay"
+          [class.is-speaking]="speaking()"
+          [disabled]="transcriptLocked() || saving()"
+          (click)="replayQuestion()"
+          aria-label="Replay Question Audio"
+          title="Replay Question Audio">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path
+              fill="currentColor"
+              d="M3 10v4h4l5 5V5L7 10H3zm13.5 2A4.5 4.5 0 0 0 14 8.23v7.53A4.47 4.47 0 0 0 16.5 12zM14 3.23v2.06a7.5 7.5 0 0 1 0 13.42v2.06a9.5 9.5 0 0 0 0-17.54z" />
+          </svg>
+        </button>
+      </div>
       <ng-template #noQuestions>
-        <h1 class="ci-question">Waiting for interview questions…</h1>
+        <h1 class="ci-question question-heading">Waiting for interview questions…</h1>
       </ng-template>
 
       <div class="ci-waveform" aria-hidden="true">
@@ -41,43 +77,70 @@
           [style.animationDelay.ms]="i * 70"></span>
       </div>
 
-      <div class="ci-transcript" *ngIf="liveTranscript() || listening()">
-        <span class="ci-transcript-label">
-          {{ listening() ? 'Listening…' : 'Your answer' }}
-        </span>
-        <p>{{ liveTranscript() || 'Speak your answer — it will be transcribed automatically.' }}</p>
+      <div
+        class="ci-transcript-wrap"
+        [class.is-listening]="listening()"
+        [class.is-muted]="!micEnabled()"
+        [class.is-locked]="transcriptLocked()">
+        <label class="ci-transcript-label" for="ci-transcript">
+          {{
+            transcriptLocked()
+              ? 'Transcript locked'
+              : listening()
+                ? 'Listening…'
+                : (micEnabled() ? 'Live transcript' : 'Microphone muted')
+          }}
+        </label>
+        <textarea
+          id="ci-transcript"
+          class="ci-transcript-box transcript-box"
+          readonly
+          tabindex="-1"
+          spellcheck="false"
+          autocomplete="off"
+          rows="6"
+          [value]="liveTranscript()"
+          [attr.placeholder]="transcriptPlaceholder()"
+          [disabled]="transcriptLocked()"
+          (beforeinput)="$event.preventDefault()"
+          (paste)="$event.preventDefault()"
+          (cut)="$event.preventDefault()"
+          (drop)="$event.preventDefault()"
+          aria-readonly="true"
+          aria-live="polite"
+          aria-label="Live speech transcript"></textarea>
+
+        <div class="ci-action-footer action-footer">
+          <button
+            type="button"
+            class="ci-ctrl ci-mic-btn"
+            [class.is-off]="!micEnabled()"
+            [disabled]="transcriptLocked()"
+            (click)="toggleMic(); $event.stopPropagation()"
+            [attr.aria-pressed]="!micEnabled()"
+            [attr.aria-label]="micEnabled() ? 'Mute microphone' : 'Unmute microphone'">
+            {{ micEnabled() ? 'Mute Mic' : 'Unmute Mic' }}
+          </button>
+
+          <button
+            type="button"
+            class="ci-btn-submit btn-submit"
+            [disabled]="saving() || !currentQuestion() || transcriptLocked()"
+            (click)="submitCurrentAnswer(true)">
+            {{ submitButtonLabel() }}
+          </button>
+        </div>
       </div>
     </section>
 
     <footer class="ci-controls">
-      <button
-        type="button"
-        class="ci-ctrl"
-        [class.is-off]="!micEnabled()"
-        (click)="toggleMic()"
-        [attr.aria-pressed]="!micEnabled()">
-        {{ micEnabled() ? 'Mute Mic' : 'Unmute Mic' }}
-      </button>
-
-      <button
-        type="button"
-        class="ci-ctrl primary"
-        [disabled]="saving() || !currentQuestion"
-        (click)="submitCurrentAnswer(true)">
-        {{
-          currentIndex() + 1 >= questions().length
-            ? (saving() ? 'Finishing…' : 'Submit & Finish')
-            : (saving() ? 'Saving…' : 'Next Question')
-        }}
-      </button>
-
-      <button type="button" class="ci-ctrl danger" [disabled]="saving()" (click)="endCall()">
+      <button type="button" class="ci-ctrl danger" [disabled]="saving() || transcriptLocked()" (click)="endCall()">
         End Call
       </button>
     </footer>
   </ng-container>
 
-  <section *ngIf="connectionStatus() === 'Completed'" class="ci-complete">
+  <section *ngIf="connectionStatus() === 'Completed' && !timeLimitReached() && !linkExpired()" class="ci-complete">
     <h1>Interview Completed</h1>
     <p>Thank you, {{ candidateName() }}. Your responses have been submitted.</p>
     <p class="ci-complete-note">You can safely close this window.</p>

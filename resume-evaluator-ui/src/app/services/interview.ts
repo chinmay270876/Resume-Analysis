@@ -136,6 +136,16 @@ export class InterviewService {
       .pipe(catchError(this.handleError));
   }
 
+  /** Recruiter-only — extend meeting link expiry by +24 hours while still valid. */
+  extendInterviewLink(id: string): Observable<InterviewDetailResult> {
+    return this.http
+      .post<InterviewDetailResult>(
+        `${this.apiBase}/api/interviews/${encodeURIComponent(id)}/extend`,
+        {}
+      )
+      .pipe(catchError(this.handleError));
+  }
+
   /** Canonical candidate room URL path (relative). */
   candidateInterviewPath(id: string): string[] {
     return ['/candidate-interview', id];

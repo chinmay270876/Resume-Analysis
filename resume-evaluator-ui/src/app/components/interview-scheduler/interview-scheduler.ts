@@ -43,8 +43,7 @@ export class InterviewScheduler implements OnInit, OnChanges {
 
   protected candidateName = '';
   protected candidateEmail = '';
-  protected date = '';
-  protected time = '';
+  protected scheduledDateTime = '';
   protected timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
   protected duration = 25;
 
@@ -71,7 +70,7 @@ export class InterviewScheduler implements OnInit, OnChanges {
     if (interview?.estimatedDuration) {
       const match = String(interview.estimatedDuration).match(/(\d+)/);
       if (match) {
-        this.duration = Number(match[1]) || 25;
+        this.duration = Math.min(Number(match[1]) || 25, 30);
       }
     }
   }
@@ -94,7 +93,8 @@ export class InterviewScheduler implements OnInit, OnChanges {
       this.error.set('Candidate name and email are required.');
       return;
     }
-    if (!this.date || !this.time) {
+    const { date, time } = this.splitDateTime(this.scheduledDateTime);
+    if (!date || !time) {
       this.error.set('Date and time are required.');
       return;
     }
@@ -105,8 +105,8 @@ export class InterviewScheduler implements OnInit, OnChanges {
     const payload: CreateInterviewPayload = {
       candidateName: this.candidateName.trim(),
       candidateEmail: this.candidateEmail.trim(),
-      date: this.date,
-      time: this.time,
+      date,
+      time,
       timezone: this.timezone,
       duration: this.duration,
       status: 'Scheduled',
@@ -150,5 +150,13 @@ export class InterviewScheduler implements OnInit, OnChanges {
           this.error.set(extractApiErrorMessage(err, 'Failed to schedule interview.'));
         },
       });
+  }
+
+  private splitDateTime(value: string): { date: string; time: string } {
+    const raw = (value || '').trim();
+    const [datePart, timePart] = raw.split('T');
+    const date = (datePart || '').trim();
+    const time = (timePart || '').trim().slice(0, 5);
+    return { date, time };
   }
 }

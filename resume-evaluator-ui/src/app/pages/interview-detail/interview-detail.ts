@@ -59,8 +59,7 @@ export class InterviewDetail implements OnInit, OnDestroy {
   protected readonly highlightJoin = signal(false);
   protected readonly timezones = [...COMMON_TIMEZONES];
 
-  protected rescheduleDate = '';
-  protected rescheduleTime = '';
+  protected rescheduleDateTime = '';
   protected rescheduleTimezone = 'UTC';
   protected rescheduleDuration = 25;
 
@@ -112,10 +111,9 @@ export class InterviewDetail implements OnInit, OnDestroy {
   }
 
   private seedRescheduleForm(item: ScheduledInterview): void {
-    this.rescheduleDate = item.date || '';
-    this.rescheduleTime = item.time || '';
+    this.rescheduleDateTime = this.toDateTimeLocal(item.date, item.time);
     this.rescheduleTimezone = item.timezone || 'UTC';
-    this.rescheduleDuration = item.durationMinutes || 25;
+    this.rescheduleDuration = Math.min(item.durationMinutes || 25, 30);
     if (!this.timezones.includes(this.rescheduleTimezone)) {
       this.timezones.unshift(this.rescheduleTimezone);
     }
@@ -298,6 +296,36 @@ export class InterviewDetail implements OnInit, OnDestroy {
     );
   }
 
+  protected canExtendLink(item: ScheduledInterview): boolean {
+    if (item.canExtendLink === false) return false;
+    if (item.linkExpired) return false;
+    if (!this.canAct(item)) return false;
+    const expiresAt = item.expiresAt;
+    if (!expiresAt) return false;
+    const parsed = new Date(expiresAt).getTime();
+    if (Number.isNaN(parsed)) return false;
+    return Date.now() <= parsed;
+  }
+
+  protected extendLink(): void {
+    const current = this.interview();
+    if (!current || !this.canExtendLink(current)) return;
+    this.actionLoading.set(true);
+    this.interviewService.extendInterviewLink(current.id).subscribe({
+      next: (result) => {
+        this.actionLoading.set(false);
+        if (result.interview) {
+          this.interview.set(result.interview);
+        }
+        this.toast.show('Interview link extended by 24 hours.', 'success');
+      },
+      error: (err: HttpErrorResponse) => {
+        this.actionLoading.set(false);
+        this.toast.show(extractApiErrorMessage(err, 'Cannot extend an expired link'), 'error');
+      },
+    });
+  }
+
   protected isCompleted(item: ScheduledInterview): boolean {
     return item.isCompleted === true || POST_COMPLETION_STATUSES.has(item.status);
   }
@@ -321,7 +349,8 @@ export class InterviewDetail implements OnInit, OnDestroy {
   protected submitReschedule(): void {
     const current = this.interview();
     if (!current) return;
-    if (!this.rescheduleDate || !this.rescheduleTime) {
+    const { date, time } = this.splitDateTime(this.rescheduleDateTime);
+    if (!date || !time) {
       this.toast.show('Date and time are required.', 'error');
       return;
     }
@@ -329,8 +358,8 @@ export class InterviewDetail implements OnInit, OnDestroy {
     this.actionLoading.set(true);
     this.interviewService
       .rescheduleInterview(current.id, {
-        date: this.rescheduleDate,
-        time: this.rescheduleTime,
+        date,
+        time,
         duration: this.rescheduleDuration,
         timezone: this.rescheduleTimezone,
       })
@@ -401,5 +430,21 @@ export class InterviewDetail implements OnInit, OnDestroy {
     if (state === 'ready') return 'join-ready';
     if (state === 'ended') return 'join-ended';
     return 'join-unavailable';
+  }
+
+  private toDateTimeLocal(date: string | null | undefined, time: string | null | undefined): string {
+    const datePart = (date || '').trim();
+    const timePart = (time || '').trim().slice(0, 5);
+    if (!datePart || !timePart) return '';
+    return `${datePart}T${timePart}`;
+  }
+
+  private splitDateTime(value: string): { date: string; time: string } {
+    const raw = (value || '').trim();
+    const [datePart, timePart] = raw.split('T');
+    return {
+      date: (datePart || '').trim(),
+      time: (timePart || '').trim().slice(0, 5),
+    };
   }
 }

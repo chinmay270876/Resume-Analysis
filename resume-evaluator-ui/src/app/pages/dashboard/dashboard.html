@@ -285,6 +285,10 @@
               <strong>{{ formatDuration(interview) }}</strong>
             </div>
             <div>
+              <span>Link expires</span>
+              <strong>{{ formatExpiresAt(interview.expiresAt) }}</strong>
+            </div>
+            <div>
               <span>Interviewer</span>
               <strong>{{ interview.interviewer || 'Voice AI Agent' }}</strong>
             </div>
@@ -334,17 +338,13 @@
           <div *ngIf="rescheduleId() === interview.id" class="reschedule-panel">
             <h3>Reschedule Interview</h3>
             <div class="reschedule-grid">
-              <label>
-                <span>Date</span>
-                <input type="date" [(ngModel)]="rescheduleDate" />
-              </label>
-              <label>
-                <span>Time</span>
-                <input type="time" [(ngModel)]="rescheduleTime" />
+              <label class="reschedule-datetime">
+                <span>Date &amp; Time</span>
+                <input type="datetime-local" [(ngModel)]="rescheduleDateTime" />
               </label>
               <label>
                 <span>Duration (min)</span>
-                <input type="number" [(ngModel)]="rescheduleDuration" min="5" max="480" />
+                <input type="number" [(ngModel)]="rescheduleDuration" min="5" max="30" />
               </label>
             </div>
             <div class="reschedule-actions">
@@ -370,6 +370,14 @@
             rel="noopener noreferrer">
             Join Interview
           </a>
+          <button
+            *ngIf="canExtendLink(interview)"
+            type="button"
+            class="action-btn"
+            [disabled]="actionId() === interview.id"
+            (click)="extendLink(interview)">
+            Extend Link (+24h)
+          </button>
           <a
             *ngIf="hasTranscript(interview); else noTranscriptBtn"
             class="action-btn"
