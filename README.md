@@ -226,6 +226,21 @@ The application automatically generates
 
 ---
 
+# 100ms Voice Interviews
+
+Scheduled interviews create a 100ms room on the existing interview record.
+
+- Candidate join URL: `{FRONTEND_URL}/candidate-interview/:id` (student role)
+- Recruiter join URL: `{FRONTEND_URL}/interviews/:id/join` (interviewer or spectator)
+- Webhook (configure in the 100ms dashboard):
+
+```
+POST https://resume-analysis-api-so26.onrender.com/api/100ms/webhook
+```
+
+Use `HMS_WEBHOOK_SECRET` as the dashboard webhook secret / `x-100ms-webhook-secret` header.
+Do not put `HMS_APP_SECRET` or `HMS_WEBHOOK_SECRET` in the Angular app.
+
 # Environment Variables
 
 ```env

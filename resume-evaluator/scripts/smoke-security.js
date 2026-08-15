@@ -67,6 +67,30 @@ const smtp = emailService.getSmtpConfig();
 assert(smtp.host === "smtp.gmail.com", "defaults SMTP host to Gmail");
 assert(smtp.port === 587, "defaults SMTP port to 587");
 assert(smtp.secure === false, "defaults SMTP secure=false for STARTTLS");
+assert(smtp.family === 4, "prefers IPv4 for Gmail SMTP");
+
+{
+    const previousProvider = process.env.EMAIL_PROVIDER;
+    const previousUser = process.env.EMAIL_USER;
+    const previousPassword = process.env.EMAIL_PASSWORD;
+    process.env.EMAIL_PROVIDER = "gmail";
+    process.env.EMAIL_USER = "smoke-ipv4@gmail.com";
+    process.env.EMAIL_PASSWORD = "not-a-real-app-password";
+    emailService.__resetEmailServiceForTests();
+    emailService.__createSmtpTransporterForTests();
+    const transportOpts = emailService.__getLastSmtpTransportOptions();
+    assert(transportOpts.family === 4, "Nodemailer transporter family is 4");
+    assert(transportOpts.hasGetSocket === true, "Nodemailer transporter uses IPv4 getSocket");
+    assert(transportOpts.host === "smtp.gmail.com", "Nodemailer transporter host is smtp.gmail.com");
+    emailService.__resetEmailServiceForTests();
+    if (previousProvider == null) delete process.env.EMAIL_PROVIDER;
+    else process.env.EMAIL_PROVIDER = previousProvider;
+    if (previousUser == null) delete process.env.EMAIL_USER;
+    else process.env.EMAIL_USER = previousUser;
+    if (previousPassword == null) delete process.env.EMAIL_PASSWORD;
+    else process.env.EMAIL_PASSWORD = previousPassword;
+}
+
 
 (async () => {
     const missing = await emailService.sendScheduledInterviewInvite({

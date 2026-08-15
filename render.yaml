@@ -6,6 +6,7 @@
 # Recommended: API_KEY (also inject into frontend __env.API_KEY / build), persistent disk
 # for /data, /results, /uploads, /output. For reliable reminders: paid always-on plan
 # and/or Cron Job hitting POST /api/interviews/reminders/process.
+# Email: Gmail SMTP (Nodemailer). Do not switch this service to Resend.
 services:
   - type: web
     name: resume-analysis-api
@@ -27,6 +28,10 @@ services:
       - key: OPENAI_API_KEY
         sync: false
       - key: API_KEY
+        sync: false
+      - key: EMAIL_PROVIDER
+        value: gmail
+      - key: EMAIL_FROM
         sync: false
       - key: EMAIL_USER
         sync: false

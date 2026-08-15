@@ -1,4 +1,6 @@
 const { performance } = require("perf_hooks");
+const dns = require("dns");
+const net = require("net");
 const nodemailer = require("nodemailer");
 const { Resend } = require("resend");
 const { escapeHtml, sanitizeHttpUrl } = require("../utils/htmlEscape");
@@ -13,6 +15,14 @@ const MAX_SEND_ATTEMPTS = 3;
 const SMTP_CONNECTION_TIMEOUT_MS = 8000;
 const SMTP_GREETING_TIMEOUT_MS = 8000;
 const SMTP_SOCKET_TIMEOUT_MS = 15000;
+// Nodemailer 9.0.4 resolveHostname() collects A+AAAA then picks at random.
+// family on createTransport is not applied to that resolver, so we also open
+// the SMTP socket ourselves with Node family=4 (see createIpv4SmtpSocket).
+const SMTP_IP_FAMILY = 4;
+
+if (typeof dns.setDefaultResultOrder === "function") {
+    dns.setDefaultResultOrder("ipv4first");
+}
 const PRODUCTION_FRONTEND_FALLBACK = "https://resume-analysis-b7p7.onrender.com";
 const PROVIDER_RESEND = "resend";
 const PROVIDER_GMAIL = "gmail";
@@ -123,6 +133,7 @@ function isValidEmail(email) {
 let transporter;
 let transporterVerified = false;
 let smtpTransporterCreated = false;
+let lastSmtpTransportOptions = null;
 let resendClient = null;
 let testTransport = null;
 
@@ -144,10 +155,6 @@ function getEmailProvider() {
     const raw = String(process.env.EMAIL_PROVIDER || "").trim().toLowerCase();
     if (raw === PROVIDER_RESEND || raw === PROVIDER_GMAIL) {
         return raw;
-    }
-    // Production must not silently depend on Gmail SMTP connectivity.
-    if (isProductionRuntime()) {
-        return PROVIDER_RESEND;
     }
     return PROVIDER_GMAIL;
 }
@@ -229,7 +236,7 @@ function getSmtpConfig() {
             : secureEnv === "false" || secureEnv === "0"
                 ? false
                 : port === 465;
-    return { host, port, secure };
+    return { host, port, secure, family: SMTP_IP_FAMILY };
 }
 
 function getPublicEmailStatus() {
@@ -291,6 +298,65 @@ function warnIfEmailEnvMissing() {
     }
 }
 
+function logSmtpDiagnostics({ result = null, code = null } = {}) {
+    const { host, port, secure, family } = getSmtpConfig();
+    console.log(
+        `[EMAIL] SMTP host=${host} port=${port} secure=${secure} family=${family}`
+    );
+    if (result) {
+        console.log(`[EMAIL] SMTP connection result=${result}`);
+    }
+    if (code) {
+        console.error(`[EMAIL] SMTP error code: ${code}`);
+    }
+}
+
+/**
+ * Open a TCP socket to the SMTP host using IPv4 only.
+ * Nodemailer 9.0.4 ignores createTransport `{ family: 4 }` during DNS: it
+ * resolve4+resolve6 and then randomly selects an address, which on Render
+ * can be a Gmail AAAA with no IPv6 route (ENETUNREACH).
+ */
+function createIpv4SmtpSocket(options, callback) {
+    let finished = false;
+    let socket = null;
+    const finish = (err, value) => {
+        if (finished) return;
+        finished = true;
+        callback(err, value);
+    };
+
+    const onError = (err) => {
+        if (socket) socket.destroy();
+        finish(err);
+    };
+
+    socket = net.connect({
+        host: options.host,
+        port: options.port || DEFAULT_SMTP_PORT,
+        family: SMTP_IP_FAMILY,
+        lookup(hostname, lookupOptions, cb) {
+            const next = typeof lookupOptions === "function" ? lookupOptions : cb;
+            dns.lookup(hostname, { family: SMTP_IP_FAMILY, all: false }, next);
+        },
+    });
+
+    socket.setTimeout(SMTP_CONNECTION_TIMEOUT_MS, () => {
+        const err = new Error("Connection timeout");
+        err.code = "ETIMEDOUT";
+        socket.destroy();
+        finish(err);
+    });
+
+    socket.once("connect", () => {
+        socket.setTimeout(0);
+        socket.removeListener("error", onError);
+        finish(null, { connection: socket });
+    });
+
+    socket.once("error", onError);
+}
+
 function getTransporter() {
     if (getEmailProvider() === PROVIDER_RESEND) {
         throw new EmailSendError("Gmail SMTP is disabled while EMAIL_PROVIDER=resend", {
@@ -308,15 +374,15 @@ function getTransporter() {
             );
         }
 
-        const { host, port, secure } = getSmtpConfig();
+        const { host, port, secure, family } = getSmtpConfig();
 
         console.log(
             `[EMAIL] Creating SMTP transporter hostConfigured=true portConfigured=true ` +
-                `secure=${secure} userConfigured=true passwordConfigured=true`
+                `secure=${secure} family=${family} userConfigured=true passwordConfigured=true`
         );
+        logSmtpDiagnostics();
 
-        smtpTransporterCreated = true;
-        transporter = nodemailer.createTransport({
+        const transportOptions = {
             host,
             port,
             secure,
@@ -325,19 +391,28 @@ function getTransporter() {
                 user: EMAIL_USER,
                 pass: EMAIL_PASS,
             },
-            family: 4,
+            family,
             connectionTimeout: SMTP_CONNECTION_TIMEOUT_MS,
             greetingTimeout: SMTP_GREETING_TIMEOUT_MS,
             socketTimeout: SMTP_SOCKET_TIMEOUT_MS,
             tls: {
                 minVersion: "TLSv1.2",
+                servername: host,
             },
-        });
+            getSocket: createIpv4SmtpSocket,
+        };
+
+        smtpTransporterCreated = true;
+        lastSmtpTransportOptions = transportOptions;
+        transporter = nodemailer.createTransport(transportOptions);
     }
     return transporter;
 }
 
 async function ensureTransporterVerified() {
+    if (typeof testTransport === "function") {
+        return true;
+    }
     if (getEmailProvider() === PROVIDER_RESEND) {
         return true;
     }
@@ -347,10 +422,12 @@ async function ensureTransporterVerified() {
         await t.verify();
         transporterVerified = true;
         console.log("[EMAIL] SMTP transporter verification successful");
+        logSmtpDiagnostics({ result: "verified" });
         return true;
     } catch (err) {
         console.error("[EMAIL] SMTP transporter verification failed:", sanitizeEmailError(err));
         if (err.code) console.error(`[EMAIL] SMTP verify code: ${err.code}`);
+        logSmtpDiagnostics({ result: "failed", code: err.code || null });
         return false;
     }
 }
@@ -468,13 +545,19 @@ async function sendViaResend(mailOptions, label) {
 
 async function sendViaGmail(mailOptions, label) {
     const t = getTransporter();
-    const info = assertSmtpAccepted(await t.sendMail(mailOptions), label);
-    return {
-        messageId: info.messageId,
-        response: info.response,
-        accepted: info.accepted,
-        rejected: info.rejected,
-    };
+    try {
+        const info = assertSmtpAccepted(await t.sendMail(mailOptions), label);
+        logSmtpDiagnostics({ result: "accepted" });
+        return {
+            messageId: info.messageId,
+            response: info.response,
+            accepted: info.accepted,
+            rejected: info.rejected,
+        };
+    } catch (err) {
+        logSmtpDiagnostics({ result: "failed", code: err.code || null });
+        throw err;
+    }
 }
 
 async function sendWithRetry(sendOnce, label = "Email") {
@@ -698,7 +781,8 @@ async function sendScheduledInterviewInvite(interview) {
             verifyMs = performance.now() - verifyStarted;
             if (!verified) {
                 console.warn(
-                    "[EMAIL] Proceeding with send despite verify() failure — delivery may still succeed"
+                    "[EMAIL] SMTP verify() failed; sendMail() will still be attempted. " +
+                        "invitationSent is only set if Gmail accepts the message."
                 );
             }
         }
@@ -876,7 +960,8 @@ async function sendInterviewReminder(interview, reminderType) {
             const verified = await ensureTransporterVerified();
             if (!verified) {
                 console.warn(
-                    "[EMAIL] Proceeding with send despite verify() failure — delivery may still succeed"
+                    "[EMAIL] SMTP verify() failed; sendMail() will still be attempted. " +
+                        "The reminder is only marked sent if Gmail accepts the message."
                 );
             }
         }
@@ -996,12 +1081,30 @@ function __resetEmailServiceForTests() {
     transporter = null;
     transporterVerified = false;
     smtpTransporterCreated = false;
+    lastSmtpTransportOptions = null;
     resendClient = null;
     testTransport = null;
 }
 
 function __didCreateSmtpTransporter() {
     return smtpTransporterCreated;
+}
+
+function __createSmtpTransporterForTests() {
+    return getTransporter();
+}
+
+function __getLastSmtpTransportOptions() {
+    if (!lastSmtpTransportOptions) return null;
+    return {
+        host: lastSmtpTransportOptions.host,
+        port: lastSmtpTransportOptions.port,
+        secure: lastSmtpTransportOptions.secure,
+        family: lastSmtpTransportOptions.family,
+        requireTLS: lastSmtpTransportOptions.requireTLS,
+        hasGetSocket: typeof lastSmtpTransportOptions.getSocket === "function",
+        tlsServername: lastSmtpTransportOptions.tls && lastSmtpTransportOptions.tls.servername,
+    };
 }
 
 module.exports = {
@@ -1022,4 +1125,6 @@ module.exports = {
     __setEmailTransportForTests,
     __resetEmailServiceForTests,
     __didCreateSmtpTransporter,
+    __createSmtpTransporterForTests,
+    __getLastSmtpTransportOptions,
 };

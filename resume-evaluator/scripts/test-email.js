@@ -235,3 +235,97 @@ describe("interview remains scheduled after email failure", () => {
         assert.ok(result.error);
     });
 });
+
+describe("Gmail SMTP IPv4 transport", () => {
+    function useGmailEnv() {
+        process.env.EMAIL_PROVIDER = "gmail";
+        process.env.EMAIL_USER = "sender@gmail.com";
+        process.env.EMAIL_PASSWORD = "not-a-real-app-password";
+        delete process.env.RESEND_API_KEY;
+        emailService.__resetEmailServiceForTests();
+    }
+
+    it("configures the Nodemailer transporter to prefer IPv4", () => {
+        useGmailEnv();
+        emailService.__createSmtpTransporterForTests();
+        const opts = emailService.__getLastSmtpTransportOptions();
+        assert.equal(emailService.getEmailProvider(), "gmail");
+        assert.equal(opts.host, "smtp.gmail.com");
+        assert.equal(opts.port, 587);
+        assert.equal(opts.secure, false);
+        assert.equal(opts.family, 4);
+        assert.equal(opts.requireTLS, true);
+        assert.equal(opts.hasGetSocket, true);
+        assert.equal(opts.tlsServername, "smtp.gmail.com");
+        assert.equal(emailService.getSmtpConfig().family, 4);
+    });
+
+    it("defaults to Gmail even in production when EMAIL_PROVIDER is unset", () => {
+        delete process.env.EMAIL_PROVIDER;
+        process.env.NODE_ENV = "production";
+        process.env.RENDER = "true";
+        assert.equal(emailService.getEmailProvider(), "gmail");
+        delete process.env.RENDER;
+    });
+
+    it("sets sent only after sendMail succeeds", async () => {
+        useGmailEnv();
+        emailService.__setEmailTransportForTests(async () => ({
+            messageId: "gmail-msg-1",
+            response: "250 2.0.0 OK",
+            accepted: ["candidate@example.com"],
+        }));
+        const result = await emailService.sendScheduledInterviewInvite(sampleInterview);
+        assert.equal(result.sent, true);
+        assert.equal(result.success, true);
+        assert.equal(result.messageId, "gmail-msg-1");
+        assert.equal(emailService.__didCreateSmtpTransporter(), false);
+    });
+
+    it("does not set sent when SMTP sendMail fails", async () => {
+        useGmailEnv();
+        const err = new Error("connect ENETUNREACH 2404:6800:4003:c00::6d:587");
+        err.code = "ENETUNREACH";
+        emailService.__setEmailTransportForTests(async () => {
+            throw err;
+        });
+        const result = await emailService.sendScheduledInterviewInvite(sampleInterview);
+        assert.equal(result.sent, false);
+        assert.equal(result.success, false);
+        assert.match(result.error || "", /ENETUNREACH|connect/i);
+    });
+
+    it("retries retryable SMTP failures then marks sent after success", async () => {
+        useGmailEnv();
+        let attempts = 0;
+        emailService.__setEmailTransportForTests(async () => {
+            attempts += 1;
+            if (attempts < 2) {
+                const timeout = new Error("Connection timeout");
+                timeout.code = "ETIMEDOUT";
+                throw timeout;
+            }
+            return { messageId: "gmail-retry-ok", response: "250 OK" };
+        });
+        const result = await emailService.sendScheduledInterviewInvite(sampleInterview);
+        assert.equal(attempts, 2);
+        assert.equal(result.sent, true);
+        assert.equal(result.messageId, "gmail-retry-ok");
+    });
+
+    it("keeps reminder success tied to sendMail and does not create SMTP during mocked send", async () => {
+        useGmailEnv();
+        const calls = [];
+        emailService.__setEmailTransportForTests(async (mail) => {
+            calls.push(mail);
+            return { messageId: "gmail-reminder-1", response: "250 OK" };
+        });
+        const result = await emailService.sendInterviewReminder(sampleInterview, "30m");
+        assert.equal(result.success, true);
+        assert.equal(result.messageId, "gmail-reminder-1");
+        assert.equal(calls.length, 1);
+        assert.equal(calls[0].provider, "gmail");
+        assert.match(calls[0].subject, /30 Minutes/);
+        assert.equal(emailService.__didCreateSmtpTransporter(), false);
+    });
+});
