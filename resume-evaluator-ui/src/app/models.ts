@@ -594,6 +594,12 @@ export interface ScheduledInterview {
   transcriptId?: string | null;
   transcriptPath?: string | null;
   recordingPath?: string | null;
+  recordingStatus?: string | null;
+  transcriptStatus?: string | null;
+  hmsRoomId?: string | null;
+  hmsSessionId?: string | null;
+  hmsCandidateJoinedAt?: string | null;
+  hmsInterviewerJoinedAt?: string | null;
   evaluationPath?: string | null;
   evaluation?: InterviewEvaluation | null;
   evaluationId?: string | null;
@@ -676,6 +682,7 @@ export interface InterviewTokenResult {
   success: boolean;
   token?: string | null;
   roomId?: string | null;
+  role?: string | null;
   candidateName?: string;
   interview?: CandidateInterviewSession;
   questions?: CandidateInterviewQuestion[];

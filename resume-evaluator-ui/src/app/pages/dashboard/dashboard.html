@@ -369,9 +369,7 @@
           <a
             *ngIf="canAct(interview)"
             class="action-btn join"
-            [href]="'/candidate-interview/' + interview.id"
-            target="_blank"
-            rel="noopener noreferrer">
+            [routerLink]="['/interviews', interview.id, 'join']">
             Join Interview
           </a>
           <button
@@ -400,7 +398,7 @@
             [href]="recordingDownloadHref(interview.id)"
             target="_blank"
             rel="noopener noreferrer">
-            Download Recording
+            🎧 Download Interview Recording
           </a>
           <ng-template #noRecordingBtn>
             <button type="button" class="action-btn" disabled>Download Recording</button>

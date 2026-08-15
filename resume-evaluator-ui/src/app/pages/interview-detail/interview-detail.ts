@@ -178,7 +178,7 @@ export class InterviewDetail implements OnInit, OnDestroy {
   }
 
   protected hasRecording(item: ScheduledInterview): boolean {
-    return !!item.recordingPath;
+    return item.recordingStatus === 'available' || !!item.recordingPath;
   }
 
   protected hasTranscript(item: ScheduledInterview): boolean {

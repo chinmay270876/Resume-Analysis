@@ -276,7 +276,7 @@ export class CandidateInterviewComponent implements OnInit, OnDestroy {
           this.error.set(null);
           return;
         }
-        this.error.set(extractApiErrorMessage(err, 'Failed to start interview.'));
+        this.error.set(this.friendlyJoinError(err));
       },
     });
   }
@@ -403,13 +403,38 @@ export class CandidateInterviewComponent implements OnInit, OnDestroy {
     return next === -1 ? Math.max(0, questions.length - 1) : next;
   }
 
+  private friendlyJoinError(err: HttpErrorResponse): string {
+    if (this.isLinkExpiredError(err)) {
+      return 'This interview link has expired.';
+    }
+    if (err.status === 403) {
+      return extractApiErrorMessage(err, 'This interview cannot be joined.');
+    }
+    if (err.status === 404) {
+      return 'Interview not found.';
+    }
+    if (err.status === 503) {
+      return extractApiErrorMessage(err, 'The live interview room is unavailable right now.');
+    }
+    return extractApiErrorMessage(err, 'Failed to start interview.');
+  }
+
   private friendlyRoomError(err: unknown, fallback: string): string {
     const message =
       err && typeof err === 'object' && 'message' in err
         ? String((err as { message?: unknown }).message || '')
         : '';
-    if (/invalid id/i.test(message)) {
+    if (/not-allowed|permission|denied/i.test(message)) {
+      return 'Microphone permission was blocked. Allow the microphone to continue.';
+    }
+    if (/expired|invalid token|401/i.test(message)) {
+      return 'The interview token expired or is invalid. Refresh this page to request a new one.';
+    }
+    if (/invalid id|room/i.test(message)) {
       return 'Live room audio could not connect (invalid room). Continue speaking — answers are still recorded.';
+    }
+    if (/network|offline|failed to fetch/i.test(message)) {
+      return 'Network interruption. Check your connection. Answers can still be submitted.';
     }
     return message && message.length < 180 ? message : fallback;
   }

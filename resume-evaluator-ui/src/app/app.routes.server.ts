@@ -2,6 +2,10 @@ import { RenderMode, ServerRoute } from '@angular/ssr';
 
 export const serverRoutes: ServerRoute[] = [
   {
+    path: 'interviews/:id/join',
+    renderMode: RenderMode.Client,
+  },
+  {
     path: 'interviews/:id',
     renderMode: RenderMode.Server,
   },

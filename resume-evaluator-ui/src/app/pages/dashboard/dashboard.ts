@@ -440,7 +440,7 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   protected hasRecording(interview: ScheduledInterview): boolean {
-    return !!interview.recordingPath;
+    return interview.recordingStatus === 'available' || !!interview.recordingPath;
   }
 
   protected hasEvaluation(interview: ScheduledInterview): boolean {

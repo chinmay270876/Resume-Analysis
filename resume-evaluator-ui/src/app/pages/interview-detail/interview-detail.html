@@ -65,15 +65,14 @@
           <p>{{ item.joinState?.message || 'Waiting for scheduled time' }}</p>
         </div>
         <p class="join-note">
-          Candidates join a full-window 100ms audio/video room at the meeting link below.
-          Responses and speech transcripts are captured per question.
+          Click Join Interview to enter the 100ms room as interviewer or spectator.
+          The candidate uses the meeting link below and joins as the student.
         </p>
         <a
+          *ngIf="canAct(item)"
           class="action-btn primary"
-          [href]="'/candidate-interview/' + item.id"
-          target="_blank"
-          rel="noopener noreferrer">
-          Open Candidate Interview
+          [routerLink]="['/interviews', item.id, 'join']">
+          Join Interview
         </a>
       </div>
     </section>
@@ -296,7 +295,7 @@
           [href]="recordingDownloadHref(item.id)"
           target="_blank"
           rel="noopener noreferrer">
-          Download Recording
+          🎧 Download Interview Recording
         </a>
         <ng-template #noRecording>
           <button type="button" class="action-btn" disabled>

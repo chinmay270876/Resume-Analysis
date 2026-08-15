@@ -1,0 +1,70 @@
+<div class="ri-shell" role="main" aria-label="Recruiter interview room">
+  <header class="ri-topbar">
+    <div>
+      <strong>Join Interview</strong>
+      <p>{{ candidateName() }}<span *ngIf="jobRole()"> · {{ jobRole() }}</span></p>
+    </div>
+    <a class="ri-back" [routerLink]="['/interviews', interviewId]">Back to details</a>
+  </header>
+
+  <div *ngIf="error()" class="ri-error" role="alert">{{ error() }}</div>
+
+  <section *ngIf="connectionStatus() !== 'Live' && connectionStatus() !== 'Completed'" class="ri-lobby">
+    <h1>Join the live interview</h1>
+    <p>
+      This opens the 100ms interview room. It does not open the candidate question flow.
+      Choose how you want to join, then click Join Interview.
+    </p>
+
+    <div class="ri-roles" role="group" aria-label="Join as">
+      <button
+        type="button"
+        class="ri-role"
+        [class.is-active]="joinAs() === 'interviewer'"
+        [disabled]="loading()"
+        (click)="selectJoinAs('interviewer')">
+        Interviewer
+      </button>
+      <button
+        type="button"
+        class="ri-role"
+        [class.is-active]="joinAs() === 'spectator'"
+        [disabled]="loading()"
+        (click)="selectJoinAs('spectator')">
+        Spectator
+      </button>
+    </div>
+
+    <button
+      type="button"
+      class="ri-join"
+      [disabled]="loading()"
+      (click)="startJoin()">
+      {{ loading() ? 'Connecting…' : 'Join Interview' }}
+    </button>
+  </section>
+
+  <section *ngIf="connectionStatus() === 'Live'" class="ri-live">
+    <p class="ri-status">Live · joined as {{ joinedRole() || joinAs() }}</p>
+    <div class="ri-actions">
+      <button type="button" class="ri-ctrl" [class.is-off]="!micEnabled()" (click)="toggleMic()">
+        {{ micEnabled() ? 'Mute Mic' : 'Unmute Mic' }}
+      </button>
+      <button type="button" class="ri-ctrl danger" (click)="leaveCall()">Leave Interview</button>
+    </div>
+
+    <aside class="ri-notes" *ngIf="questions().length">
+      <h2>Interview questions (blueprint)</h2>
+      <p>These are the planned questions. They are not the interview transcript.</p>
+      <ol>
+        <li *ngFor="let question of questions()">{{ question.question }}</li>
+      </ol>
+    </aside>
+  </section>
+
+  <section *ngIf="connectionStatus() === 'Completed'" class="ri-done">
+    <h1>You left the interview</h1>
+    <p>The interview is completed only when the 100ms session ends, not when this page is closed.</p>
+    <a class="ri-join" [routerLink]="['/interviews', interviewId]">Return to interview details</a>
+  </section>
+</div>

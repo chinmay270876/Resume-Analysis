@@ -115,6 +115,19 @@ export class InterviewService {
       .pipe(catchError(this.handleError));
   }
 
+  /** Recruiter/admin join token. Role is decided by the backend (interviewer | spectator). */
+  getRecruiterToken(
+    id: string,
+    joinAs: 'interviewer' | 'spectator' = 'interviewer'
+  ): Observable<InterviewTokenResult> {
+    return this.http
+      .post<InterviewTokenResult>(
+        `${this.apiBase}/api/interviews/${encodeURIComponent(id)}/recruiter-token`,
+        { joinAs }
+      )
+      .pipe(catchError(this.handleError));
+  }
+
   /** Public candidate endpoint — persist per-question transcripts. */
   saveInterviewAnswers(
     id: string,
