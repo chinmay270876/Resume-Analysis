@@ -73,7 +73,7 @@ async function deliverInvitationEmail(interview, reason = "create") {
         const error =
             emailResult?.error ||
             emailResult?.reason ||
-            "Candidate invitation was not accepted by SMTP";
+            "Candidate invitation was not accepted by the email provider";
         console.warn(
             `[Interview][${reason}] invitation email not sent for ${interviewId}: ${error}`
         );

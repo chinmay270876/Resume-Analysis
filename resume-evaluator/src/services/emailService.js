@@ -1,5 +1,6 @@
 const { performance } = require("perf_hooks");
 const nodemailer = require("nodemailer");
+const { Resend } = require("resend");
 const { escapeHtml, sanitizeHttpUrl } = require("../utils/htmlEscape");
 
 // RFC-5322-lite: good enough to reject obvious garbage like "Not Provided",
@@ -13,6 +14,8 @@ const SMTP_CONNECTION_TIMEOUT_MS = 8000;
 const SMTP_GREETING_TIMEOUT_MS = 8000;
 const SMTP_SOCKET_TIMEOUT_MS = 15000;
 const PRODUCTION_FRONTEND_FALLBACK = "https://resume-analysis-b7p7.onrender.com";
+const PROVIDER_RESEND = "resend";
+const PROVIDER_GMAIL = "gmail";
 
 function isLocalOrDevHostname(hostname) {
     const host = String(hostname || "").toLowerCase();
@@ -101,6 +104,9 @@ function resolveCandidateInterviewUrl(interview) {
  * syntactically invalid addresses. Never throws.
  */
 function isValidEmail(email) {
+    if (typeof email === "string" && /[\r\n]/.test(email)) {
+        return false;
+    }
     if (typeof email !== "string") {
         return false;
     }
@@ -116,6 +122,39 @@ function isValidEmail(email) {
 
 let transporter;
 let transporterVerified = false;
+let smtpTransporterCreated = false;
+let resendClient = null;
+let testTransport = null;
+
+class EmailSendError extends Error {
+    constructor(message, { retryable = false, statusCode = null, code = null } = {}) {
+        super(message);
+        this.name = "EmailSendError";
+        this.retryable = retryable;
+        this.statusCode = statusCode;
+        this.code = code;
+    }
+}
+
+function isProductionRuntime() {
+    return process.env.NODE_ENV === "production" || Boolean(process.env.RENDER);
+}
+
+function getEmailProvider() {
+    const raw = String(process.env.EMAIL_PROVIDER || "").trim().toLowerCase();
+    if (raw === PROVIDER_RESEND || raw === PROVIDER_GMAIL) {
+        return raw;
+    }
+    // Production must not silently depend on Gmail SMTP connectivity.
+    if (isProductionRuntime()) {
+        return PROVIDER_RESEND;
+    }
+    return PROVIDER_GMAIL;
+}
+
+function getResendApiKey() {
+    return String(process.env.RESEND_API_KEY || "").trim();
+}
 
 function getEmailCredentials() {
     const EMAIL_USER = (process.env.EMAIL_USER || "").trim();
@@ -124,9 +163,44 @@ function getEmailCredentials() {
     return { EMAIL_USER, EMAIL_PASS };
 }
 
+function getConfiguredFromAddress() {
+    const from = String(process.env.EMAIL_FROM || "").trim();
+    if (from) return from;
+    if (getEmailProvider() === PROVIDER_GMAIL) {
+        return (process.env.EMAIL_USER || "").trim();
+    }
+    return "";
+}
+
+function isSafeAddressHeader(value) {
+    return typeof value === "string" && value.trim().length > 0 && !/[\r\n]/.test(value);
+}
+
 function isEmailConfigured() {
+    const provider = getEmailProvider();
+    if (provider === PROVIDER_RESEND) {
+        return Boolean(getResendApiKey() && getConfiguredFromAddress());
+    }
     const { EMAIL_USER, EMAIL_PASS } = getEmailCredentials();
     return Boolean(EMAIL_USER && EMAIL_PASS);
+}
+
+function getEmailConfigError() {
+    const provider = getEmailProvider();
+    if (provider === PROVIDER_RESEND) {
+        if (!getResendApiKey()) {
+            return "RESEND_API_KEY is not configured";
+        }
+        if (!getConfiguredFromAddress()) {
+            return "EMAIL_FROM is not configured for the Resend provider";
+        }
+        return null;
+    }
+    const { EMAIL_USER, EMAIL_PASS } = getEmailCredentials();
+    if (!EMAIL_USER || !EMAIL_PASS) {
+        return "EMAIL_USER and EMAIL_PASSWORD are not configured";
+    }
+    return null;
 }
 
 function sanitizeEmailError(error) {
@@ -134,10 +208,12 @@ function sanitizeEmailError(error) {
     return String(raw)
         .replace(/\/\/([^/@\s]+):([^@/\s]+)@/g, "//$1:<redacted>@")
         .replace(
-            /\b(EMAIL_PASSWORD|SMTP_PASS(?:WORD)?|SMTP_PASSWORD|AUTH(?:ENTICATION)?[_-]?TOKEN|API[_-]?KEY|BEARER)\b\s*[=:]\s*\S+/gi,
+            /\b(EMAIL_PASSWORD|SMTP_PASS(?:WORD)?|SMTP_PASSWORD|RESEND_API_KEY|OPENAI_API_KEY|HMS_APP_SECRET|HMS_WEBHOOK_SECRET|AUTH(?:ENTICATION)?[_-]?TOKEN|API[_-]?KEY|BEARER)\b\s*[=:]\s*\S+/gi,
             "$1=<redacted>"
         )
         .replace(/pass(?:word)?[=:]\s*[^,\s]+/gi, "password=<redacted>")
+        .replace(/\bre_[A-Za-z0-9]+\b/g, "<redacted>")
+        .replace(/\bsk-[A-Za-z0-9_-]+\b/g, "<redacted>")
         .replace(/\b[A-Za-z0-9]{16}\b/g, "<redacted>")
         .slice(0, 240);
 }
@@ -156,11 +232,42 @@ function getSmtpConfig() {
     return { host, port, secure };
 }
 
+function getPublicEmailStatus() {
+    return {
+        provider: getEmailProvider(),
+        configured: isEmailConfigured(),
+    };
+}
+
 /**
- * Startup validation — logs warnings for missing email/SMTP env vars.
+ * Startup validation — logs warnings for missing email env vars.
  * Does not throw; scheduling must keep working without email.
+ * Does not send a test email and does not call a live provider API.
  */
 function warnIfEmailEnvMissing() {
+    const provider = getEmailProvider();
+    const fromConfigured = Boolean(getConfiguredFromAddress());
+    console.log(`[EMAIL] Provider configured: ${provider}`);
+    console.log(`[EMAIL] FRONTEND_URL configured: ${Boolean(String(process.env.FRONTEND_URL || "").trim())}`);
+
+    if (provider === PROVIDER_RESEND) {
+        console.log(`[EMAIL] API key configured: ${Boolean(getResendApiKey())}`);
+        console.log(`[EMAIL] Sender configured: ${fromConfigured}`);
+        if (!getResendApiKey()) {
+            console.warn(
+                "[EMAIL] STARTUP WARNING: Missing required env var: RESEND_API_KEY. " +
+                    "Invitation and reminder emails will fail until configured."
+            );
+        }
+        if (!fromConfigured) {
+            console.warn(
+                "[EMAIL] STARTUP WARNING: Missing required env var: EMAIL_FROM. " +
+                    "Use a Resend-verified sender, e.g. Resume Evaluator <verified@your-domain.com>."
+            );
+        }
+        return;
+    }
+
     const { host, port } = getSmtpConfig();
     const { EMAIL_USER, EMAIL_PASS } = getEmailCredentials();
     const hostConfigured = Boolean(String(process.env.SMTP_HOST || host || "").trim());
@@ -170,7 +277,6 @@ function warnIfEmailEnvMissing() {
     console.log(`[EMAIL] SMTP user configured: ${Boolean(EMAIL_USER)}`);
     console.log(`[EMAIL] SMTP password configured: ${Boolean(EMAIL_PASS)}`);
     console.log(`[EMAIL] SMTP port configured: ${Boolean(port)}`);
-    console.log(`[EMAIL] FRONTEND_URL configured: ${Boolean(String(process.env.FRONTEND_URL || "").trim())}`);
 
     if (!EMAIL_USER || !EMAIL_PASS) {
         console.warn(
@@ -186,12 +292,19 @@ function warnIfEmailEnvMissing() {
 }
 
 function getTransporter() {
+    if (getEmailProvider() === PROVIDER_RESEND) {
+        throw new EmailSendError("Gmail SMTP is disabled while EMAIL_PROVIDER=resend", {
+            retryable: false,
+        });
+    }
+
     if (!transporter) {
         const { EMAIL_USER, EMAIL_PASS } = getEmailCredentials();
 
         if (!EMAIL_USER || !EMAIL_PASS) {
-            throw new Error(
-                "Email credentials (EMAIL_USER, EMAIL_PASSWORD) are not configured"
+            throw new EmailSendError(
+                "Email credentials (EMAIL_USER, EMAIL_PASSWORD) are not configured",
+                { retryable: false }
             );
         }
 
@@ -202,6 +315,7 @@ function getTransporter() {
                 `secure=${secure} userConfigured=true passwordConfigured=true`
         );
 
+        smtpTransporterCreated = true;
         transporter = nodemailer.createTransport({
             host,
             port,
@@ -224,6 +338,9 @@ function getTransporter() {
 }
 
 async function ensureTransporterVerified() {
+    if (getEmailProvider() === PROVIDER_RESEND) {
+        return true;
+    }
     if (transporterVerified) return true;
     try {
         const t = getTransporter();
@@ -242,49 +359,166 @@ function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/**
- * Send mail with up to 3 attempts and exponential backoff (1s, 2s, 4s).
- */
+function isRetryableEmailError(error) {
+    if (!error) return false;
+    if (error.retryable === false) return false;
+    if (error.retryable === true) return true;
+
+    const status = Number(error.statusCode || error.status);
+    if ([429, 500, 502, 503, 504].includes(status)) return true;
+    if ([400, 401, 403, 404, 422].includes(status)) return false;
+
+    const code = String(error.code || "").toUpperCase();
+    if (["EAUTH", "EENVELOPE", "EMESSAGE"].includes(code)) return false;
+    if (
+        [
+            "ETIMEDOUT",
+            "ESOCKET",
+            "ECONNECTION",
+            "ENETUNREACH",
+            "ECONNRESET",
+            "ECONNREFUSED",
+            "EAI_AGAIN",
+            "UND_ERR_CONNECT_TIMEOUT",
+            "UND_ERR_SOCKET",
+        ].includes(code)
+    ) {
+        return true;
+    }
+
+    const message = String(error.message || "").toLowerCase();
+    if (
+        message.includes("invalid api key") ||
+        message.includes("missing api key") ||
+        message.includes("unauthorized") ||
+        message.includes("forbidden") ||
+        message.includes("invalid from") ||
+        message.includes("invalid recipient") ||
+        message.includes("validation")
+    ) {
+        return false;
+    }
+    return (
+        message.includes("timeout") ||
+        message.includes("timed out") ||
+        message.includes("rate limit") ||
+        message.includes("temporar") ||
+        message.includes("network")
+    );
+}
+
+function classifyResendError(error, label = "Email") {
+    const statusCode = Number(error?.statusCode || error?.status) || null;
+    const message = sanitizeEmailError(error?.message || `${label} was rejected by provider`);
+    return new EmailSendError(message, {
+        retryable: isRetryableEmailError({ ...error, statusCode, message }),
+        statusCode,
+        code: error?.name || error?.code || null,
+    });
+}
+
 function assertSmtpAccepted(info, label = "Email") {
     const accepted = Array.isArray(info?.accepted) ? info.accepted : [];
     const rejected = Array.isArray(info?.rejected) ? info.rejected : [];
     if (rejected.length > 0 && accepted.length === 0) {
-        throw new Error(`${label} was rejected by SMTP`);
+        throw new EmailSendError(`${label} was rejected by SMTP`, { retryable: false });
     }
     if (accepted.length === 0 && !info?.messageId) {
-        throw new Error(`${label} was not accepted by SMTP`);
+        throw new EmailSendError(`${label} was not accepted by SMTP`, { retryable: true });
     }
     return info;
 }
 
-async function sendMailWithRetry(mailOptions, label = "Email") {
+function getResendClient() {
+    const apiKey = getResendApiKey();
+    if (!apiKey) {
+        throw new EmailSendError("RESEND_API_KEY is not configured", { retryable: false });
+    }
+    if (!resendClient) {
+        resendClient = new Resend(apiKey);
+    }
+    return resendClient;
+}
+
+async function sendViaResend(mailOptions, label) {
+    const from = getConfiguredFromAddress();
+    if (!isSafeAddressHeader(from)) {
+        throw new EmailSendError("EMAIL_FROM is missing or invalid", { retryable: false });
+    }
+    if (!isValidEmail(mailOptions.to)) {
+        throw new EmailSendError("Recipient email is missing or invalid", { retryable: false });
+    }
+
+    const client = getResendClient();
+    const { data, error } = await client.emails.send({
+        from,
+        to: [mailOptions.to],
+        subject: mailOptions.subject,
+        html: mailOptions.html,
+    });
+
+    if (error) {
+        throw classifyResendError(error, label);
+    }
+    if (!data?.id) {
+        throw new EmailSendError(`${label} was not accepted by provider`, { retryable: true });
+    }
+    return { messageId: data.id, response: data };
+}
+
+async function sendViaGmail(mailOptions, label) {
     const t = getTransporter();
+    const info = assertSmtpAccepted(await t.sendMail(mailOptions), label);
+    return {
+        messageId: info.messageId,
+        response: info.response,
+        accepted: info.accepted,
+        rejected: info.rejected,
+    };
+}
+
+async function sendWithRetry(sendOnce, label = "Email") {
     let lastError;
 
     for (let attempt = 1; attempt <= MAX_SEND_ATTEMPTS; attempt++) {
         try {
             console.log(`[EMAIL] ${label} attempt ${attempt}/${MAX_SEND_ATTEMPTS}`);
-            const info = assertSmtpAccepted(await t.sendMail(mailOptions), label);
-            console.log(`[EMAIL] ${label} accepted by SMTP`, {
-                messageId: info.messageId || null,
-                acceptedCount: Array.isArray(info.accepted) ? info.accepted.length : 0,
-                rejectedCount: Array.isArray(info.rejected) ? info.rejected.length : 0,
-            });
-            return info;
+            return await sendOnce();
         } catch (err) {
             lastError = err;
             console.error(
                 `[EMAIL] ${label} attempt ${attempt}/${MAX_SEND_ATTEMPTS} failed: ${sanitizeEmailError(err)}`
             );
-            if (attempt < MAX_SEND_ATTEMPTS) {
+            if (attempt < MAX_SEND_ATTEMPTS && isRetryableEmailError(err)) {
                 const delayMs = Math.pow(2, attempt - 1) * 1000;
                 console.log(`[EMAIL] Retrying ${label} in ${delayMs}ms...`);
                 await sleep(delayMs);
+                continue;
             }
+            break;
         }
     }
 
     throw lastError;
+}
+
+async function deliverMail(mailOptions, label = "Email") {
+    const provider = getEmailProvider();
+    console.log(`[EMAIL] Provider: ${provider}`);
+
+    if (typeof testTransport === "function") {
+        return sendWithRetry(() => testTransport({ ...mailOptions, provider, label }), label);
+    }
+
+    if (provider === PROVIDER_RESEND) {
+        const configError = getEmailConfigError();
+        if (configError) {
+            throw new EmailSendError(configError, { retryable: false });
+        }
+        return sendWithRetry(() => sendViaResend(mailOptions, label), label);
+    }
+
+    return sendWithRetry(() => sendViaGmail(mailOptions, label), label);
 }
 
 function resolveJobRole(interview) {
@@ -321,6 +555,14 @@ function reminderLabel(reminderType) {
     return labels[reminderType] || "soon";
 }
 
+function buildMailFrom(fallbackUser) {
+    const from = getConfiguredFromAddress() || fallbackUser || "";
+    if (!isSafeAddressHeader(from)) {
+        throw new EmailSendError("Sender address is missing or invalid", { retryable: false });
+    }
+    return from;
+}
+
 async function sendInterviewInvite(candidateName, candidateEmail, atsEvaluation) {
     // Phase 4: never attempt to send unless the address is real. Missing or
     // invalid emails must NOT throw - the pipeline continues normally.
@@ -334,7 +576,9 @@ async function sendInterviewInvite(candidateName, candidateEmail, atsEvaluation)
     }
 
     try {
-        await ensureTransporterVerified();
+        if (getEmailProvider() === PROVIDER_GMAIL) {
+            await ensureTransporterVerified();
+        }
 
         // Defensive: never render an empty/undefined name in the email body.
         const safeName = escapeHtml(
@@ -343,7 +587,8 @@ async function sendInterviewInvite(candidateName, candidateEmail, atsEvaluation)
                 : "Candidate"
         );
 
-        console.log(`📧 Sending interview invite to ${candidateEmail}`);
+        console.log("[EMAIL] Sending evaluation invitation");
+        console.log(`[EMAIL] Recipient configured: ${isValidEmail(candidateEmail)}`);
 
         const calendlyLink = sanitizeHttpUrl(process.env.CALENDLY_LINK || "");
         const calendlyHref = escapeHtml(calendlyLink);
@@ -355,9 +600,9 @@ async function sendInterviewInvite(candidateName, candidateEmail, atsEvaluation)
             : [];
 
         const { EMAIL_USER } = getEmailCredentials();
-        const info = await sendMailWithRetry(
+        const info = await deliverMail(
             {
-                from: EMAIL_USER,
+                from: buildMailFrom(EMAIL_USER),
                 to: candidateEmail,
                 subject: "Interview Invitation",
                 html: `
@@ -403,27 +648,28 @@ async function sendInterviewInvite(candidateName, candidateEmail, atsEvaluation)
             "Interview Invite"
         );
 
-        console.log(
-            `✅ Interview invitation sent to ${candidateEmail}. MessageId: ${info.messageId}`
-        );
+        console.log("[EMAIL] Provider accepted evaluation invitation");
+        console.log(`[EMAIL] Provider messageId=${info.messageId || "none"}`);
         return { success: true, messageId: info.messageId, response: info.response };
     } catch (error) {
-        console.error("❌ Email Sending Error:", error.message);
-        if (error.stack) console.error(error.stack);
+        console.error("[EMAIL] Provider rejected evaluation invitation");
+        console.error(`[EMAIL] Provider error=${sanitizeEmailError(error)}`);
         throw error;
     }
 }
 
 /**
  * Sends a scheduled interview invitation with date, time, duration, and meeting link.
- * Reuses the existing Nodemailer transporter / credential configuration.
  */
 async function sendScheduledInterviewInvite(interview) {
     const overallStarted = performance.now();
     const candidateEmail = interview?.candidateEmail;
     const interviewId = interview?.id || "unknown";
+    const provider = getEmailProvider();
 
     console.log("[EMAIL] Preparing candidate interview email");
+    console.log(`[EMAIL] Provider: ${provider}`);
+    console.log(`[EMAIL] Sending candidate invitation`);
     console.log(`[EMAIL] Interview ID: ${interviewId}`);
     console.log(`[EMAIL] Recipient configured: ${isValidEmail(candidateEmail)}`);
 
@@ -438,20 +684,23 @@ async function sendScheduledInterviewInvite(interview) {
         };
     }
 
-    if (!isEmailConfigured()) {
-        const error = "EMAIL_USER and EMAIL_PASSWORD are not configured";
-        console.error(`[EMAIL] Candidate invitation failed: ${error}`);
-        return { success: false, sent: false, error };
+    const configError = getEmailConfigError();
+    if (configError) {
+        console.error(`[EMAIL] Candidate invitation failed: ${configError}`);
+        return { success: false, sent: false, error: configError };
     }
 
     try {
-        const verifyStarted = performance.now();
-        const verified = await ensureTransporterVerified();
-        const verifyMs = performance.now() - verifyStarted;
-        if (!verified) {
-            console.warn(
-                "[EMAIL] Proceeding with send despite verify() failure — delivery may still succeed"
-            );
+        let verifyMs = 0;
+        if (provider === PROVIDER_GMAIL) {
+            const verifyStarted = performance.now();
+            const verified = await ensureTransporterVerified();
+            verifyMs = performance.now() - verifyStarted;
+            if (!verified) {
+                console.warn(
+                    "[EMAIL] Proceeding with send despite verify() failure — delivery may still succeed"
+                );
+            }
         }
 
         const safeName = escapeHtml(
@@ -482,10 +731,7 @@ async function sendScheduledInterviewInvite(interview) {
             return { success: false, sent: false, error };
         }
 
-        if (
-            (process.env.NODE_ENV === "production" || process.env.RENDER) &&
-            !isUsablePublicFrontendUrl(meetingLink)
-        ) {
+        if (isProductionRuntime() && !isUsablePublicFrontendUrl(meetingLink)) {
             const error =
                 "FRONTEND_URL must be a public production URL for candidate invitation emails";
             console.error(`[EMAIL] Candidate invitation failed: ${error}`);
@@ -494,9 +740,9 @@ async function sendScheduledInterviewInvite(interview) {
 
         const { EMAIL_USER } = getEmailCredentials();
         const sendStarted = performance.now();
-        const info = await sendMailWithRetry(
+        const info = await deliverMail(
             {
-                from: EMAIL_USER,
+                from: buildMailFrom(EMAIL_USER),
                 to: candidateEmail,
                 subject: "Interview Scheduled — Invitation",
                 html: `
@@ -575,8 +821,14 @@ async function sendScheduledInterviewInvite(interview) {
         );
         const sendMs = performance.now() - sendStarted;
 
-        console.log("[EMAIL] Candidate invitation accepted by SMTP");
-        console.log(`[EMAIL] messageId=${info.messageId || "none"}`);
+        if (!info?.messageId) {
+            console.error("[EMAIL] Provider rejected candidate invitation");
+            console.error("[EMAIL] Provider error=missing provider message id");
+            return { success: false, sent: false, error: "Provider did not return a message id" };
+        }
+
+        console.log("[EMAIL] Provider accepted candidate invitation");
+        console.log(`[EMAIL] Provider messageId=${info.messageId}`);
         console.log(
             `[EMAIL] Scheduled Invite timing: verify=${verifyMs.toFixed(1)}ms ` +
                 `send=${sendMs.toFixed(1)}ms total=${(performance.now() - overallStarted).toFixed(1)}ms`
@@ -589,8 +841,8 @@ async function sendScheduledInterviewInvite(interview) {
         };
     } catch (error) {
         const safeError = sanitizeEmailError(error);
-        console.error("[EMAIL] Candidate invitation failed");
-        console.error(`[EMAIL] error=${safeError}`);
+        console.error("[EMAIL] Provider rejected candidate invitation");
+        console.error(`[EMAIL] Provider error=${safeError}`);
         return { success: false, sent: false, error: safeError };
     }
 }
@@ -614,27 +866,19 @@ async function sendInterviewReminder(interview, reminderType) {
     const interviewDate = interview.date || interview.interviewDate || "TBD";
     const interviewTime = interview.time || interview.interviewTime || "TBD";
     const timezone = interview.timezone || "UTC";
-    const reminderTimeIso =
-        interview.reminderTimestamps?.[reminderType] ||
-        interview.reminderTimestamp ||
-        null;
 
-    console.log("[Email] Reminder attempt details:", {
-        candidateName,
-        email: candidateEmail,
-        interviewDate,
-        interviewTime: `${interviewTime} (${timezone})`,
-        scheduledAt: interview.scheduledAt || interview.scheduledTimestamp || null,
-        reminderTime: reminderTimeIso,
-        reminderType,
-    });
+    console.log(`[EMAIL] Provider: ${getEmailProvider()}`);
+    console.log(`[EMAIL] Sending ${reminderType} reminder`);
+    console.log(`[EMAIL] Recipient configured: ${isValidEmail(candidateEmail)}`);
 
     try {
-        const verified = await ensureTransporterVerified();
-        if (!verified) {
-            console.warn(
-                "[Email] Proceeding with send despite verify() failure — delivery may still succeed"
-            );
+        if (getEmailProvider() === PROVIDER_GMAIL) {
+            const verified = await ensureTransporterVerified();
+            if (!verified) {
+                console.warn(
+                    "[EMAIL] Proceeding with send despite verify() failure — delivery may still succeed"
+                );
+            }
         }
 
         const safeName = escapeHtml(candidateName);
@@ -649,9 +893,9 @@ async function sendInterviewReminder(interview, reminderType) {
         const labelSafe = escapeHtml(label);
 
         const { EMAIL_USER } = getEmailCredentials();
-        const info = await sendMailWithRetry(
+        const info = await deliverMail(
             {
-                from: EMAIL_USER,
+                from: buildMailFrom(EMAIL_USER),
                 to: candidateEmail,
                 subject: `Reminder: Your Interview starts in ${label}`,
                 html: `
@@ -722,19 +966,42 @@ async function sendInterviewReminder(interview, reminderType) {
             `Reminder ${reminderType}`
         );
 
-        console.log(
-            `✅ Reminder sent successfully (${reminderType}) to ${candidateEmail}. MessageId: ${info.messageId}`
-        );
+        if (!info?.messageId) {
+            throw new EmailSendError("Provider did not return a message id", { retryable: true });
+        }
+
+        console.log(`[EMAIL] Provider accepted reminder`);
+        console.log(`[EMAIL] Provider messageId=${info.messageId}`);
         return {
             success: true,
             messageId: info.messageId,
             response: info.response,
         };
     } catch (error) {
-        console.error(`❌ Reminder Email Error (${reminderType}):`, error.message);
-        if (error.stack) console.error(error.stack);
-        throw error;
+        const safeError = sanitizeEmailError(error);
+        console.error(`[EMAIL] Provider rejected reminder`);
+        console.error(`[EMAIL] Provider error=${safeError}`);
+        throw new EmailSendError(safeError, {
+            retryable: isRetryableEmailError(error),
+            statusCode: error.statusCode || null,
+        });
     }
+}
+
+function __setEmailTransportForTests(fn) {
+    testTransport = typeof fn === "function" ? fn : null;
+}
+
+function __resetEmailServiceForTests() {
+    transporter = null;
+    transporterVerified = false;
+    smtpTransporterCreated = false;
+    resendClient = null;
+    testTransport = null;
+}
+
+function __didCreateSmtpTransporter() {
+    return smtpTransporterCreated;
 }
 
 module.exports = {
@@ -746,6 +1013,13 @@ module.exports = {
     warnIfEmailEnvMissing,
     ensureTransporterVerified,
     getSmtpConfig,
+    getEmailProvider,
+    getPublicEmailStatus,
     resolveCandidateInterviewUrl,
     sanitizeEmailError,
+    isRetryableEmailError,
+    EmailSendError,
+    __setEmailTransportForTests,
+    __resetEmailServiceForTests,
+    __didCreateSmtpTransporter,
 };

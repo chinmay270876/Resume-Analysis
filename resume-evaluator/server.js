@@ -9,6 +9,13 @@ const express = require("express");
 const cors = require("cors");
 const path = require("path");
 const { apiKeyAuth } = require("./src/middleware/apiKeyAuth");
+const {
+    warnIfEmailEnvMissing,
+    ensureTransporterVerified,
+    getEmailProvider,
+    getPublicEmailStatus,
+    sanitizeEmailError,
+} = require("./src/services/emailService");
 
 const app = express();
 
@@ -247,11 +254,14 @@ app.get("/", (req, res) => {
 });
 
 app.get("/api/health", (req, res) => {
+    const email = getPublicEmailStatus();
     res.status(200).json({
         success: true,
         message: "Resume Evaluator API Running",
         service: "resume-evaluator",
         runtime: "node",
+        emailProvider: email.provider,
+        emailConfigured: email.configured,
     });
 });
 
@@ -323,10 +333,6 @@ const {
     startReminderScheduler,
     stopReminderScheduler,
 } = require("./src/services/interviewReminderService");
-const {
-    warnIfEmailEnvMissing,
-    ensureTransporterVerified,
-} = require("./src/services/emailService");
 const progressStore = require("./src/utils/progressStore");
 
 const server = app.listen(PORT, () => {
@@ -345,10 +351,11 @@ const server = app.listen(PORT, () => {
     }
 
     warnIfEmailEnvMissing();
-    ensureTransporterVerified().catch((err) => {
-        console.error("[Email] Startup SMTP verify error:", err.message);
-        if (err.stack) console.error(err.stack);
-    });
+    if (getEmailProvider() === "gmail") {
+        ensureTransporterVerified().catch((err) => {
+            console.error("[EMAIL] Startup SMTP verify error:", sanitizeEmailError(err));
+        });
+    }
 
     const { isHmsConfigured, publicWebhookUrl } = require("./src/services/hmsTokenService");
     if (!isHmsConfigured()) {

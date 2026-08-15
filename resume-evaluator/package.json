@@ -132,6 +132,7 @@
     "raw-body": "^3.0.2",
     "readable-stream": "^3.6.2",
     "readdir-glob": "^1.1.3",
+    "resend": "^6.20.0",
     "rimraf": "^2.7.1",
     "router": "^2.2.0",
     "safe-buffer": "^5.2.1",
@@ -169,7 +170,7 @@
   "scripts": {
     "dev": "node server.js",
     "start": "node server.js",
-    "test": "node scripts/smoke-security.js && node --test scripts/test-hms.js"
+    "test": "node scripts/smoke-security.js && node --test scripts/test-hms.js scripts/test-email.js"
   },
   "engines": {
     "node": ">=20"

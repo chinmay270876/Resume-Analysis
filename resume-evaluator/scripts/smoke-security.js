@@ -84,8 +84,12 @@ assert(smtp.secure === false, "defaults SMTP secure=false for STARTTLS");
 
     const previousUser = process.env.EMAIL_USER;
     const previousPassword = process.env.EMAIL_PASSWORD;
+    const previousProvider = process.env.EMAIL_PROVIDER;
+    const previousResend = process.env.RESEND_API_KEY;
+    const previousFrom = process.env.EMAIL_FROM;
     delete process.env.EMAIL_USER;
     delete process.env.EMAIL_PASSWORD;
+    process.env.EMAIL_PROVIDER = "gmail";
     assert(emailService.isEmailConfigured() === false, "detects SMTP not configured");
     const unconfigured = await emailService.sendScheduledInterviewInvite({
         id: "interview-unconfigured",
@@ -97,15 +101,38 @@ assert(smtp.secure === false, "defaults SMTP secure=false for STARTTLS");
         durationMinutes: 25,
     });
     assert(unconfigured.sent === false, "unconfigured SMTP does not report sent");
+
+    process.env.EMAIL_PROVIDER = "resend";
+    delete process.env.RESEND_API_KEY;
+    delete process.env.EMAIL_FROM;
+    assert(emailService.isEmailConfigured() === false, "detects Resend not configured");
+    const unconfiguredResend = await emailService.sendScheduledInterviewInvite({
+        id: "interview-unconfigured-resend",
+        candidateEmail: "candidate@example.com",
+        candidateName: "Test Candidate",
+        date: "2026-08-20",
+        time: "10:00",
+        timezone: "UTC",
+        durationMinutes: 25,
+    });
+    assert(unconfiguredResend.sent === false, "unconfigured Resend does not report sent");
+    assert(/RESEND_API_KEY/i.test(unconfiguredResend.error || ""), "missing Resend key returns a clear error");
+
     if (previousUser == null) delete process.env.EMAIL_USER;
     else process.env.EMAIL_USER = previousUser;
     if (previousPassword == null) delete process.env.EMAIL_PASSWORD;
     else process.env.EMAIL_PASSWORD = previousPassword;
+    if (previousProvider == null) delete process.env.EMAIL_PROVIDER;
+    else process.env.EMAIL_PROVIDER = previousProvider;
+    if (previousResend == null) delete process.env.RESEND_API_KEY;
+    else process.env.RESEND_API_KEY = previousResend;
+    if (previousFrom == null) delete process.env.EMAIL_FROM;
+    else process.env.EMAIL_FROM = previousFrom;
 
     const leaked = emailService.sanitizeEmailError(
-        new Error("SMTP auth failed password=supersecret EMAIL_PASSWORD=abcd API_KEY=xyz smtp://user:hunter2@smtp.gmail.com")
+        new Error("SMTP auth failed password=supersecret EMAIL_PASSWORD=abcd API_KEY=xyz RESEND_API_KEY=re_secretkey smtp://user:hunter2@smtp.gmail.com")
     );
-    assert(!/supersecret|hunter2|abcd|xyz/.test(leaked), "sanitizes SMTP credentials from email errors");
+    assert(!/supersecret|hunter2|abcd|xyz|re_secretkey/.test(leaked), "sanitizes SMTP credentials from email errors");
     assert(/redacted/i.test(leaked), "marks redacted credential material");
 
     console.log("All smoke-security checks passed.");
