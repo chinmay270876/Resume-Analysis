@@ -132,6 +132,11 @@ function isEmailConfigured() {
 function sanitizeEmailError(error) {
     const raw = error && typeof error === "object" ? error.message : String(error || "Email send failed");
     return String(raw)
+        .replace(/\/\/([^/@\s]+):([^@/\s]+)@/g, "//$1:<redacted>@")
+        .replace(
+            /\b(EMAIL_PASSWORD|SMTP_PASS(?:WORD)?|SMTP_PASSWORD|AUTH(?:ENTICATION)?[_-]?TOKEN|API[_-]?KEY|BEARER)\b\s*[=:]\s*\S+/gi,
+            "$1=<redacted>"
+        )
         .replace(/pass(?:word)?[=:]\s*[^,\s]+/gi, "password=<redacted>")
         .replace(/\b[A-Za-z0-9]{16}\b/g, "<redacted>")
         .slice(0, 240);

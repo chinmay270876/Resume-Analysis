@@ -3,6 +3,7 @@ const interviewService = require("../services/interviewService");
 const {
     sendScheduledInterviewInvite,
     sanitizeEmailError,
+    isValidEmail,
 } = require("../services/emailService");
 const { processReminders } = require("../services/interviewReminderService");
 const { getResultDownloadBuffer } = require("../services/interviewResultService");
@@ -10,6 +11,28 @@ const { generateInterviewSummaryExcel } = require("../services/excelService");
 const { INTERVIEW_STATUSES } = require("../models/interviewStatuses");
 
 const INVITATION_EMAIL_TIMEOUT_MS = 25000;
+
+function isInvitationEmailEligible(interview) {
+    return (
+        interview?.status === INTERVIEW_STATUSES.SCHEDULED ||
+        interview?.status === INTERVIEW_STATUSES.REMINDER_SENT
+    );
+}
+
+function logInterviewEmailDecisionStart({ recipientConfigured, invoked }) {
+    console.log("[EMAIL] Interview email decision");
+    console.log(`[EMAIL] Recipient configured: ${!!recipientConfigured}`);
+    console.log(`[EMAIL] Email service invoked: ${!!invoked}`);
+}
+
+function logInterviewEmailSendResult({ invoked, result }) {
+    const sendResult = !invoked
+        ? "skipped"
+        : result?.success || result?.sent
+            ? "success"
+            : "failure";
+    console.log(`[EMAIL] Send result: ${sendResult}`);
+}
 
 function withTimeout(promise, ms, label) {
     let timer;
@@ -83,12 +106,15 @@ exports.createInterview = async (req, res, next) => {
         const persistMs = performance.now() - persistStarted;
 
         let emailResult = null;
-        if (
-            interview.status === INTERVIEW_STATUSES.SCHEDULED ||
-            interview.status === INTERVIEW_STATUSES.REMINDER_SENT
-        ) {
+        const shouldSendEmail = isInvitationEmailEligible(interview);
+        logInterviewEmailDecisionStart({
+            recipientConfigured: isValidEmail(interview?.candidateEmail),
+            invoked: shouldSendEmail,
+        });
+        if (shouldSendEmail) {
             emailResult = await deliverInvitationEmail(interview, "create");
         }
+        logInterviewEmailSendResult({ invoked: shouldSendEmail, result: emailResult });
 
         const totalMs = performance.now() - requestStarted;
         console.log(
@@ -332,9 +358,15 @@ exports.updateInterview = async (req, res, next) => {
                 previous.timezone !== interview.timezone ||
                 previous.durationMinutes !== interview.durationMinutes);
 
-        if (becameScheduled || scheduleChanged) {
+        const shouldSendEmail = becameScheduled || scheduleChanged;
+        logInterviewEmailDecisionStart({
+            recipientConfigured: isValidEmail(interview?.candidateEmail),
+            invoked: shouldSendEmail,
+        });
+        if (shouldSendEmail) {
             emailResult = await deliverInvitationEmail(interview, "update");
         }
+        logInterviewEmailSendResult({ invoked: shouldSendEmail, result: emailResult });
 
         const totalMs = performance.now() - requestStarted;
         console.log(

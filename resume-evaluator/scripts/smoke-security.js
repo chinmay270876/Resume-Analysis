@@ -102,6 +102,12 @@ assert(smtp.secure === false, "defaults SMTP secure=false for STARTTLS");
     if (previousPassword == null) delete process.env.EMAIL_PASSWORD;
     else process.env.EMAIL_PASSWORD = previousPassword;
 
+    const leaked = emailService.sanitizeEmailError(
+        new Error("SMTP auth failed password=supersecret EMAIL_PASSWORD=abcd API_KEY=xyz smtp://user:hunter2@smtp.gmail.com")
+    );
+    assert(!/supersecret|hunter2|abcd|xyz/.test(leaked), "sanitizes SMTP credentials from email errors");
+    assert(/redacted/i.test(leaked), "marks redacted credential material");
+
     console.log("All smoke-security checks passed.");
 })().catch((err) => {
     console.error("FAIL:", err.message || err);
