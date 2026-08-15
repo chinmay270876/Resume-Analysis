@@ -9,21 +9,91 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DEFAULT_SMTP_HOST = "smtp.gmail.com";
 const DEFAULT_SMTP_PORT = 587;
 const MAX_SEND_ATTEMPTS = 3;
+const SMTP_CONNECTION_TIMEOUT_MS = 8000;
+const SMTP_GREETING_TIMEOUT_MS = 8000;
+const SMTP_SOCKET_TIMEOUT_MS = 15000;
+const PRODUCTION_FRONTEND_FALLBACK = "https://resume-analysis-b7p7.onrender.com";
+
+function isLocalOrDevHostname(hostname) {
+    const host = String(hostname || "").toLowerCase();
+    return (
+        host === "localhost" ||
+        host === "127.0.0.1" ||
+        host === "0.0.0.0" ||
+        host === "::1" ||
+        host.endsWith(".local")
+    );
+}
+
+function isApiHostname(hostname) {
+    const candidates = [process.env.RENDER_EXTERNAL_URL, process.env.BACKEND_PUBLIC_URL];
+    for (const raw of candidates) {
+        if (!raw) continue;
+        try {
+            if (new URL(raw).hostname.toLowerCase() === String(hostname || "").toLowerCase()) {
+                return true;
+            }
+        } catch {
+            // ignore invalid public API URLs
+        }
+    }
+    return /(?:^|\.)resume-analysis-api/i.test(String(hostname || ""));
+}
+
+function isUsablePublicFrontendUrl(value) {
+    const sanitized = sanitizeHttpUrl(value);
+    if (!sanitized) return false;
+    try {
+        const parsed = new URL(sanitized);
+        if (isLocalOrDevHostname(parsed.hostname)) return false;
+        if (isApiHostname(parsed.hostname)) return false;
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function resolveFrontendBaseUrl() {
+    const configured = String(process.env.FRONTEND_URL || "").trim();
+    if (isUsablePublicFrontendUrl(configured)) {
+        return configured.replace(/\/$/, "");
+    }
+
+    const isProd = process.env.NODE_ENV === "production" || Boolean(process.env.RENDER);
+    if (isProd && !configured) {
+        console.error("[EMAIL] FRONTEND_URL is not configured in production");
+    } else if (isProd && configured && !isUsablePublicFrontendUrl(configured)) {
+        console.error("[EMAIL] FRONTEND_URL is not a usable public frontend URL");
+    }
+
+    const corsBase = String(process.env.CORS_ORIGINS || "")
+        .split(",")
+        .map((part) => part.trim())
+        .find((part) => isUsablePublicFrontendUrl(part));
+    if (corsBase) {
+        return corsBase.replace(/\/$/, "");
+    }
+
+    if (isProd) {
+        return PRODUCTION_FRONTEND_FALLBACK;
+    }
+
+    return "http://localhost:4200";
+}
 
 function resolveCandidateInterviewUrl(interview) {
     const fromRecord = sanitizeHttpUrl(interview?.meetingLink || "");
     if (fromRecord) {
-        return fromRecord.replace(/\/interviews\/([^/?#]+)/, "/candidate-interview/$1");
+        const rewritten = fromRecord.replace(/\/interviews\/([^/?#]+)/, "/candidate-interview/$1");
+        const isProd = process.env.NODE_ENV === "production" || Boolean(process.env.RENDER);
+        if (!isProd || isUsablePublicFrontendUrl(rewritten)) {
+            return rewritten;
+        }
     }
     if (interview?.id) {
-        const base =
-            process.env.FRONTEND_URL ||
-            process.env.CORS_ORIGINS?.split(",")[0]?.trim() ||
-            (process.env.RENDER ? "https://resume-analysis-b7p7.onrender.com" : null) ||
-            "http://localhost:4200";
-        return `${base.replace(/\/$/, "")}/candidate-interview/${interview.id}`;
+        return `${resolveFrontendBaseUrl()}/candidate-interview/${interview.id}`;
     }
-    return sanitizeHttpUrl(process.env.CALENDLY_LINK || "") || "";
+    return "";
 }
 
 /**
@@ -54,6 +124,19 @@ function getEmailCredentials() {
     return { EMAIL_USER, EMAIL_PASS };
 }
 
+function isEmailConfigured() {
+    const { EMAIL_USER, EMAIL_PASS } = getEmailCredentials();
+    return Boolean(EMAIL_USER && EMAIL_PASS);
+}
+
+function sanitizeEmailError(error) {
+    const raw = error && typeof error === "object" ? error.message : String(error || "Email send failed");
+    return String(raw)
+        .replace(/pass(?:word)?[=:]\s*[^,\s]+/gi, "password=<redacted>")
+        .replace(/\b[A-Za-z0-9]{16}\b/g, "<redacted>")
+        .slice(0, 240);
+}
+
 function getSmtpConfig() {
     const host = (process.env.SMTP_HOST || DEFAULT_SMTP_HOST).trim();
     const portRaw = Number(process.env.SMTP_PORT);
@@ -73,24 +156,26 @@ function getSmtpConfig() {
  * Does not throw; scheduling must keep working without email.
  */
 function warnIfEmailEnvMissing() {
-    const required = ["EMAIL_USER", "EMAIL_PASSWORD"];
-    const optionalWithDefaults = ["SMTP_HOST", "SMTP_PORT", "SMTP_SECURE"];
-    const missingRequired = required.filter((key) => !String(process.env[key] || "").trim());
-    const missingOptional = optionalWithDefaults.filter(
-        (key) => process.env[key] == null || String(process.env[key]).trim() === ""
-    );
+    const { host, port } = getSmtpConfig();
+    const { EMAIL_USER, EMAIL_PASS } = getEmailCredentials();
+    const hostConfigured = Boolean(String(process.env.SMTP_HOST || host || "").trim());
 
-    if (missingRequired.length > 0) {
+    console.log(`[EMAIL] SMTP configured: ${isEmailConfigured()}`);
+    console.log(`[EMAIL] SMTP host configured: ${hostConfigured}`);
+    console.log(`[EMAIL] SMTP user configured: ${Boolean(EMAIL_USER)}`);
+    console.log(`[EMAIL] SMTP password configured: ${Boolean(EMAIL_PASS)}`);
+    console.log(`[EMAIL] SMTP port configured: ${Boolean(port)}`);
+    console.log(`[EMAIL] FRONTEND_URL configured: ${Boolean(String(process.env.FRONTEND_URL || "").trim())}`);
+
+    if (!EMAIL_USER || !EMAIL_PASS) {
         console.warn(
-            `[Email] STARTUP WARNING: Missing required env vars: ${missingRequired.join(", ")}. ` +
-                "Reminder and invitation emails will fail until configured."
+            "[EMAIL] STARTUP WARNING: Missing required env vars: EMAIL_USER and/or EMAIL_PASSWORD. " +
+                "Invitation and reminder emails will fail until configured."
         );
     }
-    if (missingOptional.length > 0) {
-        const defaults = getSmtpConfig();
+    if (!String(process.env.SMTP_HOST || "").trim()) {
         console.warn(
-            `[Email] STARTUP WARNING: Missing optional SMTP env vars: ${missingOptional.join(", ")}. ` +
-                `Using defaults host=${defaults.host} port=${defaults.port} secure=${defaults.secure}.`
+            "[EMAIL] STARTUP WARNING: SMTP_HOST unset. Using default smtp.gmail.com:587 with STARTTLS."
         );
     }
 }
@@ -101,25 +186,33 @@ function getTransporter() {
 
         if (!EMAIL_USER || !EMAIL_PASS) {
             throw new Error(
-                "Email credentials (EMAIL_USER, EMAIL_PASSWORD) are not configured in .env"
+                "Email credentials (EMAIL_USER, EMAIL_PASSWORD) are not configured"
             );
         }
 
         const { host, port, secure } = getSmtpConfig();
 
         console.log(
-            `[Email] Creating SMTP transporter host=${host} port=${port} secure=${secure} user=${EMAIL_USER}`
+            `[EMAIL] Creating SMTP transporter hostConfigured=true portConfigured=true ` +
+                `secure=${secure} userConfigured=true passwordConfigured=true`
         );
 
         transporter = nodemailer.createTransport({
             host,
             port,
             secure,
+            requireTLS: !secure && port === 587,
             auth: {
                 user: EMAIL_USER,
                 pass: EMAIL_PASS,
             },
             family: 4,
+            connectionTimeout: SMTP_CONNECTION_TIMEOUT_MS,
+            greetingTimeout: SMTP_GREETING_TIMEOUT_MS,
+            socketTimeout: SMTP_SOCKET_TIMEOUT_MS,
+            tls: {
+                minVersion: "TLSv1.2",
+            },
         });
     }
     return transporter;
@@ -131,14 +224,11 @@ async function ensureTransporterVerified() {
         const t = getTransporter();
         await t.verify();
         transporterVerified = true;
-        console.log("[Email] SMTP transporter.verify() succeeded");
+        console.log("[EMAIL] SMTP transporter verification successful");
         return true;
     } catch (err) {
-        console.error("[Email] SMTP transporter.verify() FAILED:");
-        console.error(`  message: ${err.message}`);
-        if (err.code) console.error(`  code: ${err.code}`);
-        if (err.response) console.error(`  response: ${err.response}`);
-        if (err.stack) console.error(err.stack);
+        console.error("[EMAIL] SMTP transporter verification failed:", sanitizeEmailError(err));
+        if (err.code) console.error(`[EMAIL] SMTP verify code: ${err.code}`);
         return false;
     }
 }
@@ -150,32 +240,40 @@ function sleep(ms) {
 /**
  * Send mail with up to 3 attempts and exponential backoff (1s, 2s, 4s).
  */
+function assertSmtpAccepted(info, label = "Email") {
+    const accepted = Array.isArray(info?.accepted) ? info.accepted : [];
+    const rejected = Array.isArray(info?.rejected) ? info.rejected : [];
+    if (rejected.length > 0 && accepted.length === 0) {
+        throw new Error(`${label} was rejected by SMTP`);
+    }
+    if (accepted.length === 0 && !info?.messageId) {
+        throw new Error(`${label} was not accepted by SMTP`);
+    }
+    return info;
+}
+
 async function sendMailWithRetry(mailOptions, label = "Email") {
     const t = getTransporter();
     let lastError;
 
     for (let attempt = 1; attempt <= MAX_SEND_ATTEMPTS; attempt++) {
         try {
-            console.log(`[Email] ${label} attempt ${attempt}/${MAX_SEND_ATTEMPTS}`);
-            const info = await t.sendMail(mailOptions);
-            console.log(`[Email] ${label} SMTP response:`, {
+            console.log(`[EMAIL] ${label} attempt ${attempt}/${MAX_SEND_ATTEMPTS}`);
+            const info = assertSmtpAccepted(await t.sendMail(mailOptions), label);
+            console.log(`[EMAIL] ${label} accepted by SMTP`, {
                 messageId: info.messageId || null,
-                response: info.response || null,
-                accepted: info.accepted || [],
-                rejected: info.rejected || [],
+                acceptedCount: Array.isArray(info.accepted) ? info.accepted.length : 0,
+                rejectedCount: Array.isArray(info.rejected) ? info.rejected.length : 0,
             });
             return info;
         } catch (err) {
             lastError = err;
             console.error(
-                `[Email] ${label} attempt ${attempt}/${MAX_SEND_ATTEMPTS} failed: ${err.message}`
+                `[EMAIL] ${label} attempt ${attempt}/${MAX_SEND_ATTEMPTS} failed: ${sanitizeEmailError(err)}`
             );
-            if (err.stack) {
-                console.error(err.stack);
-            }
             if (attempt < MAX_SEND_ATTEMPTS) {
                 const delayMs = Math.pow(2, attempt - 1) * 1000;
-                console.log(`[Email] Retrying ${label} in ${delayMs}ms...`);
+                console.log(`[EMAIL] Retrying ${label} in ${delayMs}ms...`);
                 await sleep(delayMs);
             }
         }
@@ -318,19 +416,38 @@ async function sendInterviewInvite(candidateName, candidateEmail, atsEvaluation)
 async function sendScheduledInterviewInvite(interview) {
     const overallStarted = performance.now();
     const candidateEmail = interview?.candidateEmail;
+    const interviewId = interview?.id || "unknown";
+
+    console.log("[EMAIL] Preparing candidate interview email");
+    console.log(`[EMAIL] Interview ID: ${interviewId}`);
+    console.log(`[EMAIL] Recipient configured: ${isValidEmail(candidateEmail)}`);
+
     if (!isValidEmail(candidateEmail)) {
-        console.warn(
-            "Candidate email missing or invalid (" +
-                JSON.stringify(candidateEmail) +
-                "). Skipping scheduled interview invitation."
-        );
-        return { success: false, skipped: true, reason: "invalid_or_missing_email" };
+        console.error("[EMAIL] Candidate invitation failed: candidate email is missing or invalid");
+        return {
+            success: false,
+            sent: false,
+            skipped: true,
+            reason: "invalid_or_missing_email",
+            error: "Candidate email is missing or invalid",
+        };
+    }
+
+    if (!isEmailConfigured()) {
+        const error = "EMAIL_USER and EMAIL_PASSWORD are not configured";
+        console.error(`[EMAIL] Candidate invitation failed: ${error}`);
+        return { success: false, sent: false, error };
     }
 
     try {
         const verifyStarted = performance.now();
-        await ensureTransporterVerified();
+        const verified = await ensureTransporterVerified();
         const verifyMs = performance.now() - verifyStarted;
+        if (!verified) {
+            console.warn(
+                "[EMAIL] Proceeding with send despite verify() failure — delivery may still succeed"
+            );
+        }
 
         const safeName = escapeHtml(
             typeof interview.candidateName === "string" && interview.candidateName.trim()
@@ -342,11 +459,33 @@ async function sendScheduledInterviewInvite(interview) {
         const timezone = escapeHtml(interview.timezone || "UTC");
         const duration = Number(interview.durationMinutes) || 25;
         const jobRole = escapeHtml(resolveJobRole(interview));
+        const interviewer = escapeHtml(
+            typeof interview.interviewer === "string" && interview.interviewer.trim()
+                ? interview.interviewer.trim()
+                : ""
+        );
         const recruiterContact = escapeHtml(resolveRecruiterContact());
         const meetingLink = resolveCandidateInterviewUrl(interview);
         const meetingHref = escapeHtml(meetingLink);
+        const urlGenerated = Boolean(meetingLink && meetingLink.includes("/candidate-interview/"));
+        console.log(`[EMAIL] Candidate URL generated: ${urlGenerated}`);
 
-        console.log(`📧 Sending scheduled interview invite to ${candidateEmail}`);
+        if (!urlGenerated) {
+            const error =
+                "FRONTEND_URL is missing or invalid; candidate interview URL could not be generated";
+            console.error(`[EMAIL] Candidate invitation failed: ${error}`);
+            return { success: false, sent: false, error };
+        }
+
+        if (
+            (process.env.NODE_ENV === "production" || process.env.RENDER) &&
+            !isUsablePublicFrontendUrl(meetingLink)
+        ) {
+            const error =
+                "FRONTEND_URL must be a public production URL for candidate invitation emails";
+            console.error(`[EMAIL] Candidate invitation failed: ${error}`);
+            return { success: false, sent: false, error };
+        }
 
         const { EMAIL_USER } = getEmailCredentials();
         const sendStarted = performance.now();
@@ -371,6 +510,14 @@ async function sendScheduledInterviewInvite(interview) {
                             <td style="padding:8px 0; color:#64748b;">Job Role</td>
                             <td style="padding:8px 0; font-weight:600;">${jobRole}</td>
                         </tr>
+                        ${
+                            interviewer
+                                ? `<tr>
+                            <td style="padding:8px 0; color:#64748b;">Interviewer</td>
+                            <td style="padding:8px 0; font-weight:600;">${interviewer}</td>
+                        </tr>`
+                                : ""
+                        }
                         <tr>
                             <td style="padding:8px 0; color:#64748b;">Date</td>
                             <td style="padding:8px 0; font-weight:600;">${date}</td>
@@ -423,21 +570,23 @@ async function sendScheduledInterviewInvite(interview) {
         );
         const sendMs = performance.now() - sendStarted;
 
+        console.log("[EMAIL] Candidate invitation accepted by SMTP");
+        console.log(`[EMAIL] messageId=${info.messageId || "none"}`);
         console.log(
-            `✅ Scheduled interview invitation sent to ${candidateEmail}. MessageId: ${info.messageId}`
-        );
-        console.log(
-            `[Email] Scheduled Invite timing: verify=${verifyMs.toFixed(1)}ms ` +
+            `[EMAIL] Scheduled Invite timing: verify=${verifyMs.toFixed(1)}ms ` +
                 `send=${sendMs.toFixed(1)}ms total=${(performance.now() - overallStarted).toFixed(1)}ms`
         );
-        return { success: true, messageId: info.messageId, response: info.response };
+        return {
+            success: true,
+            sent: true,
+            messageId: info.messageId,
+            response: info.response,
+        };
     } catch (error) {
-        console.error(
-            `❌ Scheduled Interview Email Error after ${(performance.now() - overallStarted).toFixed(1)}ms:`,
-            error.message
-        );
-        if (error.stack) console.error(error.stack);
-        throw error;
+        const safeError = sanitizeEmailError(error);
+        console.error("[EMAIL] Candidate invitation failed");
+        console.error(`[EMAIL] error=${safeError}`);
+        return { success: false, sent: false, error: safeError };
     }
 }
 
@@ -588,7 +737,10 @@ module.exports = {
     sendScheduledInterviewInvite,
     sendInterviewReminder,
     isValidEmail,
+    isEmailConfigured,
     warnIfEmailEnvMissing,
     ensureTransporterVerified,
     getSmtpConfig,
+    resolveCandidateInterviewUrl,
+    sanitizeEmailError,
 };

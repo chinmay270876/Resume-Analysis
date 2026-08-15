@@ -386,10 +386,17 @@ export class Dashboard implements OnInit, OnDestroy {
         timezone: interview.timezone,
       })
       .subscribe({
-        next: () => {
+        next: (result) => {
           this.actionId.set(null);
           this.rescheduleId.set(null);
-          this.toast.show('Interview rescheduled. Reminders updated.', 'success');
+          if (result?.email && !(result.email.sent || result.email.success)) {
+            this.toast.show(
+              'Interview scheduled successfully, but the candidate invitation email could not be sent. Please verify the candidate email address or email configuration.',
+              'error'
+            );
+          } else {
+            this.toast.show('Interview rescheduled. Reminders updated.', 'success');
+          }
           this.refreshAll();
         },
         error: (err: HttpErrorResponse) => {

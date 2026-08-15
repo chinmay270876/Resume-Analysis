@@ -143,17 +143,16 @@ export class InterviewScheduler implements OnInit, OnChanges {
           if (result?.success && result.interview) {
             this.createdInterview.set(result.interview);
             this.scheduled.emit(result.interview);
-            const emailNote =
-              result.email?.queued
-                ? ' Invitation email is being sent.'
-                : result.email?.success
-                  ? ' Invitation email sent.'
-                  : result.email?.skipped
-                    ? ' Invitation email skipped (invalid email).'
-                    : result.email?.error
-                      ? ` Interview saved; email failed: ${result.email.error}`
-                      : '';
-            this.toast.show(`Interview scheduled.${emailNote}`, 'success');
+            if (result.email?.sent || result.email?.success) {
+              this.toast.show('Interview scheduled. Invitation email sent.', 'success');
+            } else if (result.email) {
+              this.toast.show(
+                'Interview scheduled successfully, but the candidate invitation email could not be sent. Please verify the candidate email address or email configuration.',
+                'error'
+              );
+            } else {
+              this.toast.show('Interview scheduled.', 'success');
+            }
           } else {
             this.error.set(result?.error || result?.message || 'Failed to schedule interview.');
           }

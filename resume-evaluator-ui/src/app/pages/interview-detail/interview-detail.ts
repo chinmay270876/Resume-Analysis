@@ -375,7 +375,14 @@ export class InterviewDetail implements OnInit, OnDestroy {
           if (result.interview) {
             this.interview.set(result.interview);
           }
-          this.toast.show('Interview rescheduled. Reminders updated.', 'success');
+          if (result.email && !(result.email.sent || result.email.success)) {
+            this.toast.show(
+              'Interview scheduled successfully, but the candidate invitation email could not be sent. Please verify the candidate email address or email configuration.',
+              'error'
+            );
+          } else {
+            this.toast.show('Interview rescheduled. Reminders updated.', 'success');
+          }
         },
         error: (err: HttpErrorResponse) => {
           this.actionLoading.set(false);

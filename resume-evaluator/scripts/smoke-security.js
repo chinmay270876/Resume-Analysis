@@ -34,4 +34,76 @@ assert(Array.isArray(resolveAudioAbsolutePath("output/smoke-test.mp3")), "allows
 assert(sanitizeAudioFilePath("output/smoke-test.mp3") === "output/smoke-test.mp3", "sanitizes to relative");
 fs.unlinkSync(sample);
 
-console.log("All smoke-security checks passed.");
+const emailService = require("../src/services/emailService");
+
+assert(emailService.isValidEmail("candidate@example.com") === true, "accepts valid candidate email");
+assert(emailService.isValidEmail("") === false, "rejects missing candidate email");
+assert(emailService.isValidEmail("Not Provided") === false, "rejects placeholder email");
+assert(emailService.isValidEmail("john@") === false, "rejects invalid email");
+
+const previousFrontend = process.env.FRONTEND_URL;
+const previousNodeEnv = process.env.NODE_ENV;
+process.env.FRONTEND_URL = "https://resume-analysis-b7p7.onrender.com";
+process.env.NODE_ENV = "production";
+const candidateUrl = emailService.resolveCandidateInterviewUrl({
+    id: "interview-123",
+    meetingLink: "http://localhost:4200/candidate-interview/interview-123",
+});
+assert(
+    candidateUrl === "https://resume-analysis-b7p7.onrender.com/candidate-interview/interview-123",
+    "rebuilds production candidate URL instead of localhost"
+);
+assert(candidateUrl.includes("/candidate-interview/interview-123"), "uses candidate-interview path");
+assert(!candidateUrl.includes("localhost"), "does not email localhost URLs in production");
+
+if (previousFrontend == null) {
+    delete process.env.FRONTEND_URL;
+} else {
+    process.env.FRONTEND_URL = previousFrontend;
+}
+process.env.NODE_ENV = previousNodeEnv;
+
+const smtp = emailService.getSmtpConfig();
+assert(smtp.host === "smtp.gmail.com", "defaults SMTP host to Gmail");
+assert(smtp.port === 587, "defaults SMTP port to 587");
+assert(smtp.secure === false, "defaults SMTP secure=false for STARTTLS");
+
+(async () => {
+    const missing = await emailService.sendScheduledInterviewInvite({
+        id: "interview-missing-email",
+        candidateEmail: "",
+    });
+    assert(missing.sent === false, "missing candidate email does not report sent");
+    assert(Boolean(missing.error), "missing candidate email returns an error");
+
+    const invalid = await emailService.sendScheduledInterviewInvite({
+        id: "interview-invalid-email",
+        candidateEmail: "not-an-email",
+    });
+    assert(invalid.sent === false, "invalid candidate email does not report sent");
+
+    const previousUser = process.env.EMAIL_USER;
+    const previousPassword = process.env.EMAIL_PASSWORD;
+    delete process.env.EMAIL_USER;
+    delete process.env.EMAIL_PASSWORD;
+    assert(emailService.isEmailConfigured() === false, "detects SMTP not configured");
+    const unconfigured = await emailService.sendScheduledInterviewInvite({
+        id: "interview-unconfigured",
+        candidateEmail: "candidate@example.com",
+        candidateName: "Test Candidate",
+        date: "2026-08-20",
+        time: "10:00",
+        timezone: "UTC",
+        durationMinutes: 25,
+    });
+    assert(unconfigured.sent === false, "unconfigured SMTP does not report sent");
+    if (previousUser == null) delete process.env.EMAIL_USER;
+    else process.env.EMAIL_USER = previousUser;
+    if (previousPassword == null) delete process.env.EMAIL_PASSWORD;
+    else process.env.EMAIL_PASSWORD = previousPassword;
+
+    console.log("All smoke-security checks passed.");
+})().catch((err) => {
+    console.error("FAIL:", err.message || err);
+    process.exit(1);
+});

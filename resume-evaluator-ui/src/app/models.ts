@@ -776,6 +776,7 @@ export interface InterviewDetailResult {
   success: boolean;
   interview?: ScheduledInterview;
   email?: {
+    sent?: boolean;
     success?: boolean;
     skipped?: boolean;
     queued?: boolean;

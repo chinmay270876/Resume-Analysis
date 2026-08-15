@@ -73,13 +73,39 @@ function parseDuration(value) {
     return Math.round(num);
 }
 
+function isLocalFrontendHost(value) {
+    try {
+        const host = new URL(value).hostname.toLowerCase();
+        return host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0" || host === "::1";
+    } catch {
+        return true;
+    }
+}
+
 function frontendBaseUrl() {
-    return (
-        process.env.FRONTEND_URL ||
-        process.env.CORS_ORIGINS?.split(",")[0]?.trim() ||
-        (process.env.RENDER ? "https://resume-analysis-b7p7.onrender.com" : null) ||
-        "http://localhost:4200"
-    );
+    const configured = String(process.env.FRONTEND_URL || "").trim();
+    if (configured) {
+        return configured.replace(/\/$/, "");
+    }
+
+    const isProd = process.env.NODE_ENV === "production" || Boolean(process.env.RENDER);
+    if (isProd) {
+        console.error("[EMAIL] FRONTEND_URL is not configured in production");
+    }
+
+    const corsBase = String(process.env.CORS_ORIGINS || "")
+        .split(",")
+        .map((part) => part.trim())
+        .find((part) => part && !isLocalFrontendHost(part));
+    if (corsBase) {
+        return corsBase.replace(/\/$/, "");
+    }
+
+    if (isProd) {
+        return "https://resume-analysis-b7p7.onrender.com";
+    }
+
+    return "http://localhost:4200";
 }
 
 function buildMeetingLink(interviewId) {

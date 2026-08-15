@@ -1,0 +1,56 @@
+# Render Blueprint — Node Express API (not Python/gunicorn).
+# Apply to the live Node service (currently resume-analysis-api-so26) or replace the
+# broken resume-analysis-api gunicorn service with this Node config.
+#
+# Required dashboard secrets: OPENAI_API_KEY, EMAIL_USER, EMAIL_PASSWORD
+# Recommended: API_KEY (also inject into frontend __env.API_KEY / build), persistent disk
+# for /data, /results, /uploads, /output. For reliable reminders: paid always-on plan
+# and/or Cron Job hitting POST /api/interviews/reminders/process.
+services:
+  - type: web
+    name: resume-analysis-api
+    runtime: node
+    rootDir: resume-evaluator
+    plan: free
+    buildCommand: npm install --omit=dev
+    startCommand: node server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: FRONTEND_URL
+        value: https://resume-analysis-b7p7.onrender.com
+      - key: CORS_ORIGINS
+        value: https://resume-analysis-b7p7.onrender.com,https://resume-analysis-d9mf.onrender.com
+      - key: MODEL_NAME
+        value: gpt-4o-mini
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: API_KEY
+        sync: false
+      - key: EMAIL_USER
+        sync: false
+      - key: EMAIL_PASSWORD
+        sync: false
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_SECURE
+        value: "false"
+      - key: HMS_APP_ACCESS_KEY
+        sync: false
+      - key: HMS_APP_SECRET
+        sync: false
+      - key: HMS_TEMPLATE_ID
+        sync: false
+      - key: HMS_WEBHOOK_SECRET
+        sync: false
+      - key: HMS_REGION
+        value: in
+      - key: HMS_ROLE_INTERVIEWER
+        value: interviewer
+      - key: HMS_ROLE_STUDENT
+        value: student
+      - key: HMS_ROLE_ADMIN
+        value: host
