@@ -66,7 +66,21 @@ const defaultOrigins = [
 const envOrigins = process.env.CORS_ORIGINS
     ? process.env.CORS_ORIGINS.split(",").map((s) => s.trim()).filter(Boolean)
     : [];
-const allowedOrigins = [...new Set([...defaultOrigins, ...envOrigins])];
+function originFromUrl(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    try {
+        return new URL(raw).origin;
+    } catch {
+        return raw.replace(/\/$/, "");
+    }
+}
+const frontendOrigin = originFromUrl(process.env.FRONTEND_URL);
+const allowedOrigins = [...new Set([
+    ...defaultOrigins,
+    ...envOrigins,
+    ...(frontendOrigin ? [frontendOrigin] : []),
+])];
 
 app.use(cors({
     origin(origin, callback) {

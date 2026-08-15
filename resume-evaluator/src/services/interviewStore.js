@@ -69,23 +69,39 @@ async function ensureStoreFile() {
     }
 }
 
+function normalizeStore(parsed) {
+    const interviews = Array.isArray(parsed?.interviews)
+        ? parsed.interviews.filter((item) => item && typeof item === "object")
+        : null;
+    if (!parsed || typeof parsed !== "object" || !interviews) {
+        return null;
+    }
+    return { interviews };
+}
+
 async function readStore() {
     await ensureStoreFile();
     const raw = await fsp.readFile(STORE_FILEPATH, "utf8");
+    const trimmed = String(raw || "").trim();
+    if (!trimmed) {
+        return { interviews: [] };
+    }
     try {
-        const parsed = JSON.parse(raw);
-        if (!parsed || !Array.isArray(parsed.interviews)) {
-            console.error(
-                `[InterviewStore] Invalid store shape at ${STORE_FILEPATH}; expected { interviews: [] }`
-            );
-            return { interviews: [] };
+        const normalized = normalizeStore(JSON.parse(trimmed));
+        if (!normalized) {
+            throw new Error("expected { interviews: [] }");
         }
-        return parsed;
+        return normalized;
     } catch (err) {
         console.error(
             `[InterviewStore] Failed to parse ${STORE_FILEPATH}: ${err.message}`
         );
-        return { interviews: [] };
+        const error = new Error(
+            "Interview store is unreadable. Refusing to overwrite interviews.json."
+        );
+        error.status = 500;
+        error.stage = "interview-store";
+        throw error;
     }
 }
 

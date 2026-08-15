@@ -267,7 +267,7 @@ function parseInterviewDateTime(date, time, tz) {
 
 function computeExpiresAt(scheduledAtIso) {
     if (!scheduledAtIso) return null;
-    const scheduledAt = dayjs(scheduledAtIso);
+    const scheduledAt = dayjs.utc(scheduledAtIso);
     if (!scheduledAt.isValid()) return null;
     return scheduledAt.add(LINK_EXPIRY_HOURS, "hour").toISOString();
 }
@@ -430,10 +430,10 @@ function computeJoinState(interview) {
         };
     }
 
-    const now = dayjs();
-    const start = dayjs(interview.scheduledAt);
+    const now = dayjs.utc();
+    const start = dayjs.utc(interview.scheduledAt);
     const expiresAtIso = resolveExpiresAt(interview);
-    const expiresAt = expiresAtIso ? dayjs(expiresAtIso) : null;
+    const expiresAt = expiresAtIso ? dayjs.utc(expiresAtIso) : null;
 
     if (expiresAt && now.isAfter(expiresAt)) {
         return {
@@ -612,14 +612,14 @@ function enrichInterview(interview) {
  * Auto-advance Scheduled / Reminder Sent → In Progress when inside the time window,
  * and expire past windows that never completed.
  */
-function applyLifecycleTransitions(item, now = dayjs()) {
+function applyLifecycleTransitions(item, now = dayjs.utc()) {
     if (!ACTIVE_SCHEDULE_STATUSES.includes(item.status) || !item.scheduledAt) {
         return { item, changed: false };
     }
 
-    const start = dayjs(item.scheduledAt);
+    const start = dayjs.utc(item.scheduledAt);
     const expiresAtIso = resolveExpiresAt(item);
-    const expiresAt = expiresAtIso ? dayjs(expiresAtIso) : null;
+    const expiresAt = expiresAtIso ? dayjs.utc(expiresAtIso) : null;
     const sessionEnd = start.add(sessionCapMinutes(item.durationMinutes), "minute");
     const updatedAt = new Date().toISOString();
 
@@ -1047,9 +1047,9 @@ async function getInterview(id) {
         throw createHttpError("Interview not found.", 404);
     }
 
-    const { item: next, changed } = applyLifecycleTransitions(interview, dayjs());
+    const { item: next, changed } = applyLifecycleTransitions(interview, dayjs.utc());
     if (changed) {
-        interview = await interviewStore.updateInterview(id, () => next);
+        interview = (await interviewStore.updateInterview(id, () => next)) || next;
     }
 
     return enrichInterview(interview);
@@ -1857,6 +1857,22 @@ async function saveCandidateAnswers(id, payload = {}) {
     if (!interview) {
         throw createHttpError("Interview not found.", 404);
     }
+    if (interview.status === INTERVIEW_STATUSES.CANCELLED) {
+        throw createHttpError("This interview cannot accept answers.", 403);
+    }
+    if (POST_COMPLETION_STATUSES.includes(interview.status)) {
+        throw createHttpError("This interview has already been completed.", 403);
+    }
+    // Allow an in-progress session to finish after the 48h wall clock, but
+    // reject brand-new answer posts once the invite link has expired.
+    if (
+        isLinkExpired(interview) &&
+        interview.status !== INTERVIEW_STATUSES.IN_PROGRESS
+    ) {
+        const err = createHttpError("Link Expired", 403);
+        err.code = "LINK_EXPIRED";
+        throw err;
+    }
 
     const now = new Date().toISOString();
     const details = normalizeInterviewDetails(interview.interviewDetails);
@@ -1942,6 +1958,10 @@ async function saveCandidateAnswers(id, payload = {}) {
         updatedAt: now,
     }));
 
+    if (!updated) {
+        throw createHttpError("Interview not found.", 404);
+    }
+
     if (markComplete) {
         const lines = buildLinesFromCandidateAnswers(updated);
         if (lines.length) {
@@ -1974,17 +1994,20 @@ async function extendInterviewLink(id) {
     if (!expiresAt) {
         throw createHttpError("Interview has no expiration to extend.", 400);
     }
-    if (dayjs().isAfter(dayjs(expiresAt))) {
+    if (dayjs.utc().isAfter(dayjs.utc(expiresAt))) {
         throw createHttpError("Cannot extend an expired link", 400);
     }
 
-    const nextExpiresAt = dayjs(expiresAt).add(LINK_EXTEND_HOURS, "hour").toISOString();
+    const nextExpiresAt = dayjs.utc(expiresAt).add(LINK_EXTEND_HOURS, "hour").toISOString();
     const updated = await interviewStore.updateInterview(id, (current) => ({
         ...current,
         expiresAt: nextExpiresAt,
         updatedAt: new Date().toISOString(),
     }));
 
+    if (!updated) {
+        throw createHttpError("Interview not found.", 404);
+    }
     return enrichInterview(updated);
 }
 
