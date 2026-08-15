@@ -42,6 +42,7 @@ export class CandidateInterviewComponent implements OnInit, OnDestroy {
 
   private routeSub: Subscription | null = null;
   private tokenSub: Subscription | null = null;
+  private saveSub: Subscription | null = null;
   private hmsUnsubscribers: Array<() => void> = [];
   private hmsActions: any = null;
   private hmsStore: any = null;
@@ -50,8 +51,11 @@ export class CandidateInterviewComponent implements OnInit, OnDestroy {
   private answerStartedAt = 0;
   private interviewId = '';
   private timerInterval: ReturnType<typeof setInterval> | null = null;
+  private speakTimeout: ReturnType<typeof setTimeout> | null = null;
   private timeLimitHandled = false;
   private speakingUtterance: SpeechSynthesisUtterance | null = null;
+  private speechUnsupportedWarned = false;
+  private ttsUnavailableWarned = false;
 
   protected readonly loading = signal(true);
   protected readonly error = signal<string | null>(null);
@@ -75,16 +79,26 @@ export class CandidateInterviewComponent implements OnInit, OnDestroy {
 
   protected readonly currentQuestion = computed(() => {
     const list = this.questions();
-    const idx = this.currentIndex();
+    if (!list.length) return null;
+    const last = list.length - 1;
+    const idx = Math.min(Math.max(this.currentIndex(), 0), last);
     return list[idx] || null;
   });
 
-  protected readonly totalQuestions = MAX_INTERVIEW_QUESTIONS;
-  protected readonly progressDots = Array.from({ length: MAX_INTERVIEW_QUESTIONS }, (_, i) => i);
+  protected readonly totalQuestions = computed(() => {
+    const n = this.questions().length;
+    if (n <= 0) return MAX_INTERVIEW_QUESTIONS;
+    return Math.min(n, MAX_INTERVIEW_QUESTIONS);
+  });
+  protected readonly progressDots = computed(() =>
+    Array.from({ length: this.totalQuestions() }, (_, i) => i)
+  );
 
   protected readonly questionProgressLabel = computed(() => {
-    if (!this.questions().length) return 'No questions available';
-    return `Question ${this.currentIndex() + 1} of ${this.totalQuestions}`;
+    const n = this.totalQuestions();
+    if (!this.questions().length || n <= 0) return 'No questions available';
+    const idx = Math.min(Math.max(this.currentIndex(), 0), n - 1);
+    return `Question ${idx + 1} of ${n}`;
   });
 
   protected readonly transcriptPlaceholder = computed(() => {
@@ -141,6 +155,7 @@ export class CandidateInterviewComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.routeSub?.unsubscribe();
     this.tokenSub?.unsubscribe();
+    this.saveSub?.unsubscribe();
     this.clearSessionTimer();
     this.cancelSpeech();
     this.stopSpeechRecognition();
@@ -209,7 +224,8 @@ export class CandidateInterviewComponent implements OnInit, OnDestroy {
     this.saving.set(true);
     this.stopSpeechRecognition(false);
 
-    this.interviewService
+    this.saveSub?.unsubscribe();
+    this.saveSub = this.interviewService
       .saveInterviewAnswers(this.interviewId, {
         answers: [answer],
         completed: Boolean(advance && isLast),
@@ -228,7 +244,8 @@ export class CandidateInterviewComponent implements OnInit, OnDestroy {
             void this.leaveRoom();
             return;
           }
-          this.currentIndex.set(this.currentIndex() + 1);
+          const lastIdx = Math.max(0, Math.min(this.questions().length, MAX_INTERVIEW_QUESTIONS) - 1);
+          this.currentIndex.set(Math.min(this.currentIndex() + 1, lastIdx));
           this.resetTranscript();
           this.answerStartedAt = Date.now();
           this.speakCurrentQuestion();
@@ -264,6 +281,7 @@ export class CandidateInterviewComponent implements OnInit, OnDestroy {
     this.teardownHms();
 
     this.tokenSub?.unsubscribe();
+    this.saveSub?.unsubscribe();
     this.tokenSub = this.interviewService.getInterviewToken(id).subscribe({
       next: (result) => {
         void this.onTokenLoaded(result);
@@ -290,7 +308,7 @@ export class CandidateInterviewComponent implements OnInit, OnDestroy {
 
       const qs = this.resolveQuestions(result).slice(0, MAX_INTERVIEW_QUESTIONS);
       this.questions.set(qs);
-      this.currentIndex.set(this.initialQuestionIndex(qs, result.interview));
+      this.currentIndex.set(this.clampQuestionIndex(this.initialQuestionIndex(qs, result.interview), qs.length));
       this.resetTranscript();
       this.answerStartedAt = Date.now();
       this.loading.set(false);
@@ -400,7 +418,16 @@ export class CandidateInterviewComponent implements OnInit, OnDestroy {
         .filter((n) => Number.isFinite(n))
     );
     const next = questions.findIndex((q) => !answered.has(q.questionNo));
-    return next === -1 ? Math.max(0, questions.length - 1) : next;
+    return this.clampQuestionIndex(
+      next === -1 ? Math.max(0, questions.length - 1) : next,
+      questions.length
+    );
+  }
+
+  private clampQuestionIndex(index: number, length: number): number {
+    if (length <= 0) return 0;
+    if (!Number.isFinite(index)) return 0;
+    return Math.min(Math.max(Math.trunc(index), 0), length - 1);
   }
 
   private friendlyJoinError(err: HttpErrorResponse): string {
@@ -499,13 +526,10 @@ export class CandidateInterviewComponent implements OnInit, OnDestroy {
     const SpeechRecognition =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      if (!this.roomWarning()?.includes('Live transcription is not supported')) {
-        this.roomWarning.set(
-          [this.roomWarning(), 'Live transcription is not supported in this browser. Use Chrome or Edge.']
-            .filter(Boolean)
-            .join(' ')
-        );
-      }
+      this.warnOnce(
+        'speechUnsupportedWarned',
+        'Live transcription is not supported in this browser. You can still read each question and continue; use Chrome or Edge for speech-to-text.'
+      );
       return;
     }
 
@@ -540,7 +564,13 @@ export class CandidateInterviewComponent implements OnInit, OnDestroy {
         this.roomWarning.set('Microphone permission was blocked. Allow the mic to speak your answers.');
         return;
       }
-      if (code === 'aborted') {
+      if (code === 'audio-capture') {
+        this.micEnabled.set(false);
+        this.listening.set(false);
+        this.roomWarning.set('No microphone was found. You can still submit answers if a transcript is available.');
+        return;
+      }
+      if (code === 'aborted' || code === 'no-speech') {
         this.listening.set(false);
         return;
       }
@@ -567,6 +597,12 @@ export class CandidateInterviewComponent implements OnInit, OnDestroy {
       this.recognition = recognition;
     } catch (err) {
       console.warn('Speech recognition unavailable', err);
+      this.recognition = null;
+      this.listening.set(false);
+      this.warnOnce(
+        'speechUnsupportedWarned',
+        'Live transcription could not start. Continue with the on-screen questions; answers still save if you can speak into the live room.'
+      );
     }
   }
 
@@ -603,7 +639,8 @@ export class CandidateInterviewComponent implements OnInit, OnDestroy {
     this.cancelSpeech();
     this.stopSpeechRecognition();
 
-    this.interviewService
+    this.saveSub?.unsubscribe();
+    this.saveSub = this.interviewService
       .saveInterviewAnswers(this.interviewId, {
         answers,
         completed: true,
@@ -715,7 +752,8 @@ export class CandidateInterviewComponent implements OnInit, OnDestroy {
     }
 
     this.saving.set(true);
-    this.interviewService
+    this.saveSub?.unsubscribe();
+    this.saveSub = this.interviewService
       .saveInterviewAnswers(this.interviewId, {
         answers,
         completed: true,
@@ -745,6 +783,10 @@ export class CandidateInterviewComponent implements OnInit, OnDestroy {
 
     const synth = window.speechSynthesis;
     if (!synth) {
+      this.warnOnce(
+        'ttsUnavailableWarned',
+        'Spoken question playback is unavailable in this browser. Read each question on screen and continue.'
+      );
       if (this.micEnabled()) this.startSpeechRecognition();
       return;
     }
@@ -775,17 +817,30 @@ export class CandidateInterviewComponent implements OnInit, OnDestroy {
     utterance.onend = resumeListening;
     utterance.onerror = resumeListening;
 
-    window.setTimeout(() => {
+    if (this.speakTimeout) {
+      clearTimeout(this.speakTimeout);
+      this.speakTimeout = null;
+    }
+    this.speakTimeout = setTimeout(() => {
+      this.speakTimeout = null;
       if (this.speakingUtterance !== utterance || this.transcriptLocked()) return;
       try {
         synth.speak(utterance);
       } catch {
+        this.warnOnce(
+          'ttsUnavailableWarned',
+          'Spoken question playback failed. Read each question on screen and continue.'
+        );
         resumeListening();
       }
     }, replay ? 0 : 100);
   }
 
   private cancelSpeech(): void {
+    if (this.speakTimeout) {
+      clearTimeout(this.speakTimeout);
+      this.speakTimeout = null;
+    }
     this.speakingUtterance = null;
     this.speaking.set(false);
     if (!isPlatformBrowser(this.platformId)) return;
@@ -794,5 +849,11 @@ export class CandidateInterviewComponent implements OnInit, OnDestroy {
     } catch {
       // ignore
     }
+  }
+
+  private warnOnce(flag: 'speechUnsupportedWarned' | 'ttsUnavailableWarned', message: string): void {
+    if (this[flag]) return;
+    this[flag] = true;
+    this.roomWarning.set([this.roomWarning(), message].filter(Boolean).join(' '));
   }
 }

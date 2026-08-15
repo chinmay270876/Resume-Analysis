@@ -1,8 +1,9 @@
-import { Component, OnChanges, OnInit, SimpleChanges, inject, input, output, signal } from '@angular/core';
+import { Component, OnChanges, OnDestroy, OnInit, SimpleChanges, inject, input, output, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
+import { Subscription } from 'rxjs';
 import { finalize } from 'rxjs/operators';
 import {
   Analysis,
@@ -24,7 +25,7 @@ import { extractApiErrorMessage } from '../../utils/api-error';
   templateUrl: './interview-scheduler.html',
   styleUrl: './interview-scheduler.css',
 })
-export class InterviewScheduler implements OnInit, OnChanges {
+export class InterviewScheduler implements OnInit, OnChanges, OnDestroy {
   readonly interview = input<StructuredInterview | null>(null);
   readonly analysis = input<Analysis | null>(null);
   readonly jdAnalysis = input<JdAnalysis | null>(null);
@@ -36,6 +37,7 @@ export class InterviewScheduler implements OnInit, OnChanges {
 
   private readonly interviewService = inject(InterviewService);
   private readonly toast = inject(ToastService);
+  private createSub: Subscription | null = null;
 
   protected readonly timezones = [...COMMON_TIMEZONES];
   protected readonly submitting = signal(false);
@@ -54,6 +56,10 @@ export class InterviewScheduler implements OnInit, OnChanges {
     if (!this.timezones.includes(this.timezone)) {
       this.timezones.unshift(this.timezone);
     }
+  }
+
+  ngOnDestroy(): void {
+    this.createSub?.unsubscribe();
   }
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -135,7 +141,8 @@ export class InterviewScheduler implements OnInit, OnChanges {
     };
 
     this.submitting.set(true);
-    this.interviewService
+    this.createSub?.unsubscribe();
+    this.createSub = this.interviewService
       .createInterview(payload)
       .pipe(finalize(() => this.submitting.set(false)))
       .subscribe({

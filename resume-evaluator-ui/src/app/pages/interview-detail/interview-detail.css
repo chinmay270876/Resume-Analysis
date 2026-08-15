@@ -267,7 +267,11 @@
   background: rgba(0, 0, 0, 0.15);
   color: var(--color-text);
   font-weight: 600;
-  color-scheme: dark;
+}
+
+:host-context(body.light-mode) .reschedule-grid input,
+:host-context(body.light-mode) .reschedule-grid select {
+  background: #ffffff;
 }
 
 .reschedule-datetime {
@@ -277,6 +281,10 @@
 .reschedule-grid input[type="datetime-local"]::-webkit-calendar-picker-indicator {
   filter: invert(0.9) sepia(1) saturate(5) hue-rotate(220deg);
   cursor: pointer;
+}
+
+:host-context(body.light-mode) .reschedule-grid input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  filter: none;
 }
 
 .reminder-flags {

@@ -10,7 +10,6 @@
   z-index: 5;
   box-shadow: var(--shadow-card);
   animation: fadeInUp 0.5s ease both;
-  color-scheme: dark;
 }
 
 .sched-card.as-embedded {
@@ -114,10 +113,17 @@
 .sched-field input[type="date"],
 .sched-field input[type="time"],
 .sched-field input[type="datetime-local"] {
-  color-scheme: dark;
   background-color: rgba(15, 23, 42, 0.6);
   color: #f3f4f6;
   border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+:host-context(body.light-mode) .sched-field input[type="date"],
+:host-context(body.light-mode) .sched-field input[type="time"],
+:host-context(body.light-mode) .sched-field input[type="datetime-local"] {
+  background-color: #ffffff;
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
 }
 
 .sched-field input[type="date"]::-webkit-calendar-picker-indicator,
@@ -134,6 +140,12 @@
 .sched-field input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
   opacity: 1;
   transform: scale(1.1);
+}
+
+:host-context(body.light-mode) .sched-field input[type="date"]::-webkit-calendar-picker-indicator,
+:host-context(body.light-mode) .sched-field input[type="time"]::-webkit-calendar-picker-indicator,
+:host-context(body.light-mode) .sched-field input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  filter: none;
 }
 
 .sched-field input:focus,

@@ -50,6 +50,7 @@ export class InterviewDetail implements OnInit, OnDestroy {
   private readonly platformId = inject(PLATFORM_ID);
   private routeSub: Subscription | null = null;
   private loadSub: Subscription | null = null;
+  private actionSub: Subscription | null = null;
 
   protected readonly interview = signal<ScheduledInterview | null>(null);
   protected readonly loading = signal(false);
@@ -88,6 +89,7 @@ export class InterviewDetail implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.routeSub?.unsubscribe();
     this.loadSub?.unsubscribe();
+    this.actionSub?.unsubscribe();
   }
 
   private load(id: string): void {
@@ -234,7 +236,8 @@ export class InterviewDetail implements OnInit, OnDestroy {
     if (!current) return;
 
     this.evalRetryLoading.set(true);
-    this.interviewService.reEvaluateInterview(current.id).subscribe({
+    this.actionSub?.unsubscribe();
+    this.actionSub = this.interviewService.reEvaluateInterview(current.id).subscribe({
       next: (result) => {
         this.evalRetryLoading.set(false);
         if (result.interview) {
@@ -312,7 +315,8 @@ export class InterviewDetail implements OnInit, OnDestroy {
     const current = this.interview();
     if (!current || !this.canExtendLink(current)) return;
     this.actionLoading.set(true);
-    this.interviewService.extendInterviewLink(current.id).subscribe({
+    this.actionSub?.unsubscribe();
+    this.actionSub = this.interviewService.extendInterviewLink(current.id).subscribe({
       next: (result) => {
         this.actionLoading.set(false);
         if (result.interview) {
@@ -361,7 +365,8 @@ export class InterviewDetail implements OnInit, OnDestroy {
     }
 
     this.actionLoading.set(true);
-    this.interviewService
+    this.actionSub?.unsubscribe();
+    this.actionSub = this.interviewService
       .rescheduleInterview(current.id, {
         date,
         time,
@@ -397,7 +402,8 @@ export class InterviewDetail implements OnInit, OnDestroy {
     if (!confirm(`Cancel interview with ${current.candidateName}?`)) return;
 
     this.actionLoading.set(true);
-    this.interviewService.cancelInterview(current.id).subscribe({
+    this.actionSub?.unsubscribe();
+    this.actionSub = this.interviewService.cancelInterview(current.id).subscribe({
       next: (result) => {
         this.actionLoading.set(false);
         if (result.interview) {

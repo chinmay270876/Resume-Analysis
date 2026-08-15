@@ -54,10 +54,10 @@
         role="progressbar"
         [attr.aria-valuenow]="currentIndex() + 1"
         aria-valuemin="1"
-        [attr.aria-valuemax]="totalQuestions"
-        [attr.aria-label]="'Question ' + (currentIndex() + 1) + ' of ' + totalQuestions">
+        [attr.aria-valuemax]="totalQuestions()"
+        [attr.aria-label]="'Question ' + (currentIndex() + 1) + ' of ' + totalQuestions()">
         <span
-          *ngFor="let step of progressDots; let i = index"
+          *ngFor="let step of progressDots(); let i = index"
           class="ci-progress-dot"
           [class.is-done]="i < currentIndex()"
           [class.is-active]="i === currentIndex()"></span>

@@ -40,6 +40,7 @@ body.light-mode {
   --shadow-card: 0 10px 30px rgba(0, 0, 0, 0.06);
   --shadow-glow: 0 0 20px rgba(6, 182, 212, 0.15);
   --shadow-btn: 0 8px 25px rgba(6, 182, 212, 0.25);
+  color-scheme: light;
 }
 
 * {
@@ -50,6 +51,7 @@ body {
   margin: 0;
   background: var(--color-bg);
   color: var(--color-text);
+  color-scheme: dark;
   transition: background 0.3s ease, color 0.3s ease;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
