@@ -377,10 +377,64 @@ exports.issueInterviewToken = async (req, res, next) => {
             success: true,
             token: result.token || null,
             roomId: result.roomId || null,
+            role: result.role || "student",
             candidateName: result.candidateName,
             interview: result.interview,
             questions: result.questions || result.interview?.questions || [],
             hmsError: result.hmsError || null,
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * POST /api/interviews/:id/recruiter-token
+ * Recruiter/admin join token. API-key gated. Never issues the candidate role.
+ */
+exports.issueRecruiterToken = async (req, res, next) => {
+    try {
+        const result = await interviewService.issueRecruiterRoomToken(
+            req.params.id,
+            req.body || {}
+        );
+        return res.status(200).json({
+            success: true,
+            token: result.token,
+            roomId: result.roomId,
+            role: result.role,
+            interview: result.interview,
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * POST /api/100ms/webhook
+ * Public 100ms lifecycle endpoint. Signature is verified before this handler.
+ */
+exports.handleHmsWebhook = async (req, res, next) => {
+    try {
+        const { verifyWebhookSignature } = require("../services/hmsTokenService");
+        const verification = verifyWebhookSignature({
+            rawBody: req.rawBody,
+            headers: req.headers,
+        });
+        if (!verification.ok) {
+            console.warn("[100MS] Webhook verification failed", {
+                reason: verification.reason,
+            });
+            return res.status(401).json({
+                success: false,
+                error: "Invalid webhook signature.",
+            });
+        }
+
+        const result = await interviewService.processHmsWebhook(req.body || {});
+        return res.status(200).json({
+            success: true,
+            result,
         });
     } catch (error) {
         next(error);

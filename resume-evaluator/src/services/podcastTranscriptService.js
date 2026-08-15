@@ -50,6 +50,8 @@ function normalizeSpeaker(raw) {
     if (
         value === "ai" ||
         value === "interviewer" ||
+        value === "host" ||
+        value === "admin" ||
         value === "assistant" ||
         value === "agent" ||
         value === "voice ai" ||
@@ -61,6 +63,7 @@ function normalizeSpeaker(raw) {
 
     if (
         value === "candidate" ||
+        value === "student" ||
         value === "user" ||
         value === "human" ||
         value === "applicant" ||

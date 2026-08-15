@@ -357,8 +357,31 @@ async function reEvaluateInterview(interviewId) {
     };
 }
 
+/**
+ * Idempotent completion: skip if a real transcript already exists.
+ */
+async function tryFinalizeInterview(interviewId, payload = {}) {
+    const interview = await interviewStore.getInterviewById(interviewId);
+    if (!interview) {
+        throw createHttpError("Interview not found.", 404);
+    }
+    if (interview.transcriptId) {
+        const existing = await podcastTranscriptService.getTranscriptByInterviewId(interviewId);
+        if (existing?.lines?.length) {
+            return {
+                interview: await loadEnrichedInterview(interviewId),
+                transcript: podcastTranscriptService.toPublicTranscript(existing),
+                evaluation: interview.evaluation || null,
+                skipped: true,
+            };
+        }
+    }
+    return completeLiveInterview(interviewId, payload);
+}
+
 module.exports = {
     completeLiveInterview,
+    tryFinalizeInterview,
     reEvaluateInterview,
     getEvaluationDownloadBuffer,
     apiTranscriptPath,

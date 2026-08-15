@@ -26,6 +26,7 @@ function timingSafeEqualString(a, b) {
 function isPublicCandidateInterviewRoute(req) {
     if (req.method !== "POST") return false;
     const url = String(req.originalUrl || req.url || "").split("?")[0];
+    if (/\/api\/100ms\/webhook\/?$/.test(url)) return true;
     return /\/api\/interviews\/[^/]+\/(token|answers)\/?$/.test(url);
 }
 

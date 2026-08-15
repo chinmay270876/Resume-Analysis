@@ -511,6 +511,17 @@ function enrichInterview(interview) {
         interviewDetails,
         questions,
         meetingLink,
+        hmsRoomId: interview.hmsRoomId || interviewDetails.roomId || null,
+        hmsRoomName: interview.hmsRoomName || null,
+        hmsSessionId: interview.hmsSessionId || null,
+        hmsStartedAt: interview.hmsStartedAt || null,
+        hmsEndedAt: interview.hmsEndedAt || null,
+        hmsCandidateJoinedAt: interview.hmsCandidateJoinedAt || null,
+        hmsInterviewerJoinedAt: interview.hmsInterviewerJoinedAt || null,
+        recordingStatus: interview.recordingStatus || (interview.recordingPath ? "available" : null),
+        transcriptStatus:
+            interview.transcriptStatus ||
+            (interview.transcriptId || interview.transcriptPath ? "available" : null),
         // Canonical + alias fields for dashboard / reminder pipeline clarity
         interviewDate: interview.interviewDate || interview.date || null,
         interviewTime: interview.interviewTime || interview.time || null,
@@ -750,6 +761,18 @@ function buildInterviewRecord(payload, schedule) {
         invitationSent: false,
         invitationSentAt: null,
         interviewDetails: emptyInterviewDetails(),
+        hmsRoomId: null,
+        hmsRoomName: null,
+        hmsSessionId: null,
+        hmsRoomCode: null,
+        hmsStartedAt: null,
+        hmsEndedAt: null,
+        hmsRecordingId: null,
+        hmsCandidateJoinedAt: null,
+        hmsInterviewerJoinedAt: null,
+        recordingStatus: null,
+        transcriptStatus: null,
+        hmsProcessedEventIds: [],
         // Post-interview artifacts — populated only after live Voice AI completes
         transcriptId: null,
         transcriptPath: null,
@@ -779,7 +802,8 @@ async function createInterview(payload) {
     );
 
     const created = await interviewStore.createInterview(record);
-    return enrichInterview(created);
+    const withRoom = await attachHmsRoom(created);
+    return enrichInterview(withRoom || created);
 }
 
 async function listInterviews(filters = {}) {
@@ -1310,12 +1334,88 @@ async function compareCandidates(ids = []) {
     return buildCandidateCompare(interviews, ids);
 }
 
-/**
- * Issue a 100ms auth token for the candidate interview room.
- * Returns a candidate-safe interview payload (questions + schedule, no internal paths).
- */
-async function issueCandidateRoomToken(id) {
-    const interview = await getInterview(id);
+async function attachHmsRoom(interview) {
+    if (!interview?.id) return interview;
+    if (interview.hmsRoomId) return interview;
+
+    const hms = require("./hmsTokenService");
+    if (!hms.isHmsConfigured()) {
+        console.warn("[100MS] Credentials missing — interview created without a live room.");
+        return interview;
+    }
+
+    try {
+        const room = await hms.createInterviewRoom({
+            interviewId: interview.id,
+            durationMinutes: interview.durationMinutes,
+        });
+        const updated = await interviewStore.updateInterview(interview.id, (current) => ({
+            ...current,
+            hmsRoomId: room.roomId,
+            hmsRoomName: room.roomName,
+            interviewDetails: {
+                ...normalizeInterviewDetails(current.interviewDetails),
+                roomId: room.roomId,
+            },
+            updatedAt: new Date().toISOString(),
+        }));
+        return updated || interview;
+    } catch (err) {
+        console.error("[100MS] Interview room/session create failed:", err.message);
+        return interview;
+    }
+}
+
+async function ensureInterviewRoom(interview) {
+    if (interview?.hmsRoomId) {
+        return {
+            roomId: interview.hmsRoomId,
+            roomName: interview.hmsRoomName || null,
+        };
+    }
+    const attached = await attachHmsRoom(interview);
+    if (attached?.hmsRoomId) {
+        return {
+            roomId: attached.hmsRoomId,
+            roomName: attached.hmsRoomName || null,
+        };
+    }
+    const hms = require("./hmsTokenService");
+    const legacy = hms.getConfiguredRoomId();
+    if (legacy) {
+        return { roomId: legacy, roomName: null };
+    }
+    throw createHttpError(
+        "The live interview room is unavailable. Please try again shortly.",
+        503
+    );
+}
+
+function toCandidateInterviewPayload(interview, questions) {
+    return {
+        id: interview.id,
+        candidateName: interview.candidateName,
+        candidateEmail: interview.candidateEmail,
+        jobRole: interview.jobRole,
+        date: interview.date,
+        time: interview.time,
+        timezone: interview.timezone,
+        durationMinutes: interview.durationMinutes,
+        sessionCapMinutes: interview.sessionCapMinutes,
+        scheduledAt: interview.scheduledAt,
+        expiresAt: interview.expiresAt,
+        status: interview.status,
+        joinState: interview.joinState,
+        questions: (interview.questions && interview.questions.length
+            ? interview.questions
+            : questions) || [],
+        interviewJson: interview.interviewJson || null,
+        interviewDetails: interview.interviewDetails || emptyInterviewDetails(),
+        meetingLink: interview.meetingLink,
+    };
+}
+
+function assertJoinableInterview(interview, { forCandidate = false } = {}) {
     if (!interview) {
         throw createHttpError("Interview not found.", 404);
     }
@@ -1325,32 +1425,44 @@ async function issueCandidateRoomToken(id) {
     if (POST_COMPLETION_STATUSES.includes(interview.status)) {
         throw createHttpError("This interview has already been completed.", 403);
     }
-    if (interview.linkExpired) {
+    if (forCandidate && interview.linkExpired) {
         const err = createHttpError("Link Expired", 403);
         err.code = "LINK_EXPIRED";
         throw err;
     }
+}
+
+/**
+ * Issue a 100ms auth token for the candidate interview room.
+ * Always maps to the configured student role. Never trusts a client-supplied role.
+ */
+async function issueCandidateRoomToken(id) {
+    const interview = await getInterview(id);
+    assertJoinableInterview(interview, { forCandidate: true });
 
     const questions = extractInterviewQuestions(interview);
     const now = new Date().toISOString();
+    const hms = require("./hmsTokenService");
 
     let token = null;
     let roomId = null;
     let hmsError = null;
+    let hmsRole = null;
 
     try {
-        const { generateAuthToken } = require("./hmsTokenService");
-        const role = process.env["100MS_ROLE"] || process.env.HMS_ROLE || "guest";
-        const tokenResult = await generateAuthToken({
+        const room = await ensureInterviewRoom(interview);
+        hmsRole = hms.getHmsRoleForAppRole(hms.APP_ROLES.STUDENT);
+        const tokenResult = await hms.generateAuthToken({
             userId: interview.candidateId || interview.id,
             userName: interview.candidateName,
-            role,
+            role: hmsRole,
+            roomId: room.roomId,
         });
         token = tokenResult.token || null;
-        roomId = tokenResult.roomId || null;
+        roomId = tokenResult.roomId || room.roomId;
     } catch (err) {
         hmsError = err?.message || "Unable to join the live audio room.";
-        console.warn("[HMS] token issue failed; continuing with questions only:", hmsError);
+        console.warn("[100MS] Candidate token issue failed:", hmsError);
     }
 
     await interviewStore.updateInterview(id, (current) => {
@@ -1358,6 +1470,7 @@ async function issueCandidateRoomToken(id) {
         return {
             ...current,
             meetingLink: normalizeMeetingLink(current.meetingLink, current.id),
+            hmsRoomId: roomId || current.hmsRoomId || details.roomId,
             interviewDetails: {
                 ...details,
                 startedAt: details.startedAt || now,
@@ -1365,8 +1478,7 @@ async function issueCandidateRoomToken(id) {
             },
             status:
                 current.status === INTERVIEW_STATUSES.SCHEDULED ||
-                current.status === INTERVIEW_STATUSES.REMINDER_SENT ||
-                current.status === INTERVIEW_STATUSES.EXPIRED
+                current.status === INTERVIEW_STATUSES.REMINDER_SENT
                     ? INTERVIEW_STATUSES.IN_PROGRESS
                     : current.status,
             updatedAt: now,
@@ -1374,36 +1486,341 @@ async function issueCandidateRoomToken(id) {
     });
 
     const refreshed = await getInterview(id);
-    const candidateInterview = {
-        id: refreshed.id,
-        candidateName: refreshed.candidateName,
-        candidateEmail: refreshed.candidateEmail,
-        jobRole: refreshed.jobRole,
-        date: refreshed.date,
-        time: refreshed.time,
-        timezone: refreshed.timezone,
-        durationMinutes: refreshed.durationMinutes,
-        sessionCapMinutes: refreshed.sessionCapMinutes,
-        scheduledAt: refreshed.scheduledAt,
-        expiresAt: refreshed.expiresAt,
-        status: refreshed.status,
-        joinState: refreshed.joinState,
-        questions: (refreshed.questions && refreshed.questions.length
-            ? refreshed.questions
-            : questions) || [],
-        interviewJson: refreshed.interviewJson || null,
-        interviewDetails: refreshed.interviewDetails || emptyInterviewDetails(),
-        meetingLink: refreshed.meetingLink,
-    };
-
     return {
         token,
         roomId,
+        role: hms.APP_ROLES.STUDENT,
         candidateName: refreshed.candidateName,
-        interview: candidateInterview,
-        questions: candidateInterview.questions,
+        interview: toCandidateInterviewPayload(refreshed, questions),
+        questions: refreshed.questions || questions,
         hmsError,
     };
+}
+
+/**
+ * Recruiter/admin token. Requires the existing API-key gate on the route.
+ * joinAs is an application role (interviewer | spectator), never a raw 100ms role.
+ */
+async function issueRecruiterRoomToken(id, payload = {}) {
+    const interview = await getInterview(id);
+    assertJoinableInterview(interview);
+
+    const hms = require("./hmsTokenService");
+    const appRole = hms.resolveAppRoleFromJoinAs(payload.joinAs || payload.role);
+    if (appRole === hms.APP_ROLES.STUDENT) {
+        throw createHttpError("Recruiters cannot join as the candidate.", 403);
+    }
+
+    const room = await ensureInterviewRoom(interview);
+    const hmsRole = hms.getHmsRoleForAppRole(appRole);
+    const tokenResult = await hms.generateAuthToken({
+        userId: `recruiter-${interview.id}`.slice(0, 64),
+        userName: interview.interviewer || "Interviewer",
+        role: hmsRole,
+        roomId: room.roomId,
+    });
+
+    const now = new Date().toISOString();
+    await interviewStore.updateInterview(id, (current) => ({
+        ...current,
+        hmsRoomId: tokenResult.roomId || current.hmsRoomId,
+        status:
+            current.status === INTERVIEW_STATUSES.SCHEDULED ||
+            current.status === INTERVIEW_STATUSES.REMINDER_SENT
+                ? INTERVIEW_STATUSES.IN_PROGRESS
+                : current.status,
+        updatedAt: now,
+    }));
+
+    const refreshed = await getInterview(id);
+    return {
+        token: tokenResult.token,
+        roomId: tokenResult.roomId,
+        role: appRole,
+        interview: {
+            id: refreshed.id,
+            candidateName: refreshed.candidateName,
+            jobRole: refreshed.jobRole,
+            date: refreshed.date,
+            time: refreshed.time,
+            timezone: refreshed.timezone,
+            durationMinutes: refreshed.durationMinutes,
+            status: refreshed.status,
+            questions: refreshed.questions || extractInterviewQuestions(refreshed),
+            joinState: refreshed.joinState,
+        },
+    };
+}
+
+function eventAlreadyProcessed(interview, eventId) {
+    const ids = Array.isArray(interview?.hmsProcessedEventIds)
+        ? interview.hmsProcessedEventIds
+        : [];
+    return eventId && ids.includes(eventId);
+}
+
+function rememberEventId(current, eventId) {
+    const ids = Array.isArray(current.hmsProcessedEventIds)
+        ? current.hmsProcessedEventIds.slice()
+        : [];
+    if (eventId && !ids.includes(eventId)) {
+        ids.push(eventId);
+    }
+    return ids.slice(-120);
+}
+
+async function findInterviewForHmsEvent(parsed) {
+    const interviews = await interviewStore.getAllInterviews();
+    if (parsed.roomId) {
+        const byRoom = interviews.find((item) => item.hmsRoomId === parsed.roomId);
+        if (byRoom) return byRoom;
+    }
+    if (parsed.sessionId) {
+        const bySession = interviews.find((item) => item.hmsSessionId === parsed.sessionId);
+        if (bySession) return bySession;
+    }
+    const hms = require("./hmsTokenService");
+    const fromName = hms.interviewIdFromRoomName(parsed.roomName);
+    if (fromName) {
+        return interviews.find((item) => item.id === fromName) || null;
+    }
+    return null;
+}
+
+function buildLinesFromCandidateAnswers(interview) {
+    const details = normalizeInterviewDetails(interview?.interviewDetails);
+    const lines = [];
+    for (const answer of details.answers) {
+        const question = String(answer.question || "").trim();
+        const spoken = String(answer.transcript || "").trim();
+        if (question) {
+            lines.push({
+                timestamp: answer.answeredAt || undefined,
+                speaker: "AI",
+                text: question,
+            });
+        }
+        if (spoken) {
+            lines.push({
+                timestamp: answer.answeredAt || undefined,
+                speaker: "Candidate",
+                text: spoken,
+            });
+        }
+    }
+    return lines;
+}
+
+async function queueInterviewFinalization(interviewId, payload = {}) {
+    setImmediate(() => {
+        Promise.resolve()
+            .then(async () => {
+                const { tryFinalizeInterview } = require("./interviewCompletionService");
+                await tryFinalizeInterview(interviewId, payload);
+            })
+            .catch((err) => {
+                console.error("[100MS] Interview completion follow-up failed:", err.message);
+            });
+    });
+}
+
+/**
+ * Idempotent 100ms webhook processor. Updates the existing interview record only.
+ */
+async function processHmsWebhook(rawEvent) {
+    const hms = require("./hmsTokenService");
+    const parsed = hms.parseWebhookEvent(rawEvent);
+    if (!parsed.type) {
+        return { ignored: true, reason: "missing_event_type" };
+    }
+
+    const interview = await findInterviewForHmsEvent(parsed);
+    if (!interview) {
+        console.warn("[100MS] Webhook processed — no matching interview", {
+            type: parsed.type,
+            roomId: parsed.roomId || null,
+        });
+        return { ignored: true, reason: "interview_not_found" };
+    }
+
+    if (eventAlreadyProcessed(interview, parsed.eventId)) {
+        console.log("[100MS] Webhook processed", {
+            type: parsed.type,
+            interviewId: interview.id,
+            duplicate: true,
+        });
+        return { ok: true, duplicate: true, interviewId: interview.id };
+    }
+
+    const now = new Date().toISOString();
+    const appRole = hms.resolveAppRoleFromHmsRole(parsed.peerRole);
+    const type = parsed.type.toLowerCase();
+
+    await interviewStore.updateInterview(interview.id, (current) => {
+        const next = {
+            ...current,
+            hmsProcessedEventIds: rememberEventId(current, parsed.eventId),
+            hmsLastEventType: parsed.type,
+            hmsRoomId: parsed.roomId || current.hmsRoomId,
+            hmsRoomName: parsed.roomName || current.hmsRoomName,
+            hmsSessionId: parsed.sessionId || current.hmsSessionId,
+            updatedAt: now,
+        };
+
+        if (type.includes("peer.join") || type.includes("peer.joined")) {
+            if (appRole === hms.APP_ROLES.STUDENT) {
+                next.hmsCandidateJoinedAt = next.hmsCandidateJoinedAt || parsed.timestamp || now;
+                console.log("[100MS] Candidate joined", { interviewId: current.id });
+            } else if (
+                appRole === hms.APP_ROLES.INTERVIEWER ||
+                appRole === hms.APP_ROLES.ADMIN
+            ) {
+                next.hmsInterviewerJoinedAt = next.hmsInterviewerJoinedAt || parsed.timestamp || now;
+                console.log("[100MS] Interviewer joined", { interviewId: current.id });
+            }
+            if (
+                current.status === INTERVIEW_STATUSES.SCHEDULED ||
+                current.status === INTERVIEW_STATUSES.REMINDER_SENT
+            ) {
+                next.status = INTERVIEW_STATUSES.IN_PROGRESS;
+            }
+        }
+
+        if (type.includes("session.open") || type.includes("session.started")) {
+            next.hmsStartedAt = next.hmsStartedAt || parsed.timestamp || now;
+            if (!POST_COMPLETION_STATUSES.includes(current.status)) {
+                next.status = INTERVIEW_STATUSES.IN_PROGRESS;
+            }
+            console.log("[100MS] Interview started", { interviewId: current.id });
+        }
+
+        if (type.includes("session.close") || type.includes("session.ended")) {
+            next.hmsEndedAt = parsed.timestamp || now;
+            if (!POST_COMPLETION_STATUSES.includes(current.status)) {
+                next.status = INTERVIEW_STATUSES.COMPLETED;
+            }
+            console.log("[100MS] Interview completed", { interviewId: current.id });
+        }
+
+        if (type.includes("recording") && type.includes("fail")) {
+            next.recordingStatus = "unavailable";
+        }
+
+        if (type.includes("recording") && (type.includes("success") || type.includes("ready"))) {
+            next.hmsRecordingId = parsed.recordingId || current.hmsRecordingId;
+            next.recordingStatus = current.recordingPath ? "available" : "pending";
+        }
+
+        return next;
+    });
+
+    if (type.includes("recording") && (type.includes("success") || type.includes("ready"))) {
+        await persistHmsRecording(interview.id, parsed).catch((err) => {
+            console.error("[100MS] Recording persist failed:", err.message);
+        });
+    }
+
+    if (type.includes("transcription") && (type.includes("success") || type.includes("ready"))) {
+        const lines = hms.extractTranscriptLines(parsed.transcriptLines || [], {
+            candidateUserId: interview.candidateId || interview.id,
+        });
+        if (lines.length) {
+            await queueInterviewFinalization(interview.id, {
+                lines,
+                provider: "100ms",
+                audioFilePath: interview.recordingPath || null,
+            });
+        }
+    }
+
+    if (type.includes("session.close") || type.includes("session.ended")) {
+        await finalizeAfterHmsSession(interview.id, parsed);
+    }
+
+    console.log("[100MS] Webhook processed", {
+        type: parsed.type,
+        interviewId: interview.id,
+    });
+    return { ok: true, interviewId: interview.id, type: parsed.type };
+}
+
+async function persistHmsRecording(interviewId, parsed) {
+    const hms = require("./hmsTokenService");
+    let sourceUrl = parsed.recordingUrl;
+    if (!sourceUrl) {
+        const assets = await hms.listRecordingAssets({
+            sessionId: parsed.sessionId,
+            roomId: parsed.roomId,
+        });
+        const asset = assets.find((item) => hms.pickRecordingUrl(item));
+        sourceUrl = hms.pickRecordingUrl(asset);
+        if (asset?.id) {
+            parsed.recordingId = asset.id;
+        }
+    }
+    if (!sourceUrl) {
+        await interviewStore.updateInterview(interviewId, (current) => ({
+            ...current,
+            recordingStatus: current.recordingPath ? "available" : "unavailable",
+            updatedAt: new Date().toISOString(),
+        }));
+        return null;
+    }
+
+    const saved = await hms.downloadRecordingToDisk(interviewId, sourceUrl);
+    if (!saved) {
+        await interviewStore.updateInterview(interviewId, (current) => ({
+            ...current,
+            recordingStatus: "unavailable",
+            updatedAt: new Date().toISOString(),
+        }));
+        return null;
+    }
+
+    await interviewStore.updateInterview(interviewId, (current) => ({
+        ...current,
+        hmsRecordingId: parsed.recordingId || current.hmsRecordingId,
+        recordingPath: saved.relativePath,
+        recordingStatus: "available",
+        updatedAt: new Date().toISOString(),
+    }));
+    console.log("[100MS] Recording available", { interviewId });
+    return saved;
+}
+
+async function finalizeAfterHmsSession(interviewId, parsed) {
+    const interview = await interviewStore.getInterviewById(interviewId);
+    if (!interview) return;
+
+    const hms = require("./hmsTokenService");
+    let lines = hms.extractTranscriptLines(parsed.transcriptLines || [], {
+        candidateUserId: interview.candidateId || interview.id,
+    });
+    if (!lines.length) {
+        lines = buildLinesFromCandidateAnswers(interview);
+    }
+
+    if (!lines.length) {
+        await interviewStore.updateInterview(interviewId, (current) => ({
+            ...current,
+            transcriptStatus: current.transcriptId ? "available" : "unavailable",
+            recordingStatus:
+                current.recordingPath
+                    ? "available"
+                    : current.recordingStatus || "unavailable",
+            updatedAt: new Date().toISOString(),
+        }));
+        return;
+    }
+
+    await queueInterviewFinalization(interviewId, {
+        lines,
+        provider: "100ms",
+        audioFilePath:
+            interview.recordingPath && !String(interview.recordingPath).startsWith("/api/")
+                ? interview.recordingPath
+                : null,
+    });
 }
 
 /**
@@ -1499,6 +1916,22 @@ async function saveCandidateAnswers(id, payload = {}) {
         updatedAt: now,
     }));
 
+    if (markComplete) {
+        const lines = buildLinesFromCandidateAnswers(updated);
+        if (lines.length) {
+            queueInterviewFinalization(id, {
+                lines,
+                provider: "live-session",
+            });
+        } else {
+            await interviewStore.updateInterview(id, (current) => ({
+                ...current,
+                transcriptStatus: current.transcriptId ? "available" : "unavailable",
+                updatedAt: new Date().toISOString(),
+            }));
+        }
+    }
+
     return enrichInterview(updated);
 }
 
@@ -1559,6 +1992,8 @@ module.exports = {
     getCandidateRanking,
     compareCandidates,
     issueCandidateRoomToken,
+    issueRecruiterRoomToken,
+    processHmsWebhook,
     saveCandidateAnswers,
     extendInterviewLink,
     computeExpiresAt,

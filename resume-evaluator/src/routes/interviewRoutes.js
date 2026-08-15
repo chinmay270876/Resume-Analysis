@@ -14,6 +14,7 @@ const {
     downloadResultReport,
     downloadExcelSummary,
     issueInterviewToken,
+    issueRecruiterToken,
     saveInterviewAnswers,
     extendInterviewLink,
 } = require("../controllers/interviewController");
@@ -41,6 +42,7 @@ router.get("/compare", compareCandidates);
 
 // 100ms candidate room — public (API key exempt via middleware)
 router.post("/:id/token", requireActiveInterviewLink, issueInterviewToken);
+router.post("/:id/recruiter-token", issueRecruiterToken);
 router.post("/:id/answers", saveInterviewAnswers);
 router.post("/:id/extend", extendInterviewLink);
 

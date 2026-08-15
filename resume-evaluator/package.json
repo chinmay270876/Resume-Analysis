@@ -168,7 +168,8 @@
   },
   "scripts": {
     "dev": "node server.js",
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node scripts/smoke-security.js && node --test scripts/test-hms.js"
   },
   "engines": {
     "node": ">=20"

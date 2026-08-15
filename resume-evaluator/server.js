@@ -114,10 +114,13 @@ app.use((req, res, next) => {
     res.setHeader("X-Frame-Options", "DENY");
     res.setHeader("X-XSS-Protection", "1; mode=block");
     res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-    res.setHeader("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
+    res.setHeader("Permissions-Policy", "geolocation=(), microphone=(self), camera=(self)");
     if (process.env.NODE_ENV === "production") {
         res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
-        res.setHeader("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://api.openai.com https://api.openai.com/v1; font-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'");
+        res.setHeader(
+            "Content-Security-Policy",
+            "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob: https:; connect-src 'self' https://api.openai.com https://*.100ms.live wss://*.100ms.live https://*.live-video.net; font-src 'self'; worker-src 'self' blob:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'"
+        );
     }
     next();
 });
@@ -194,7 +197,12 @@ app.use((req, res, next) => {
 // ================================
 
 app.use(express.json({
-    limit: "10mb"
+    limit: "10mb",
+    verify(req, _res, buf) {
+        if (req.originalUrl && /\/api\/100ms\/webhook\/?$/.test(req.originalUrl.split("?")[0])) {
+            req.rawBody = Buffer.from(buf || "");
+        }
+    },
 }));
 
 app.use(express.urlencoded({
@@ -244,6 +252,9 @@ const interviewRoutes =
 
 // Opt-in: when API_KEY is set, all /api routes require it. Response shapes unchanged.
 // GET /api/health is registered above and remains public for uptime checks.
+const { handleHmsWebhook } = require("./src/controllers/interviewController");
+app.post("/api/100ms/webhook", handleHmsWebhook);
+
 app.use("/api", apiKeyAuth);
 app.use("/api", resumeRoutes);
 app.use("/api/interviews", interviewRoutes);
@@ -324,6 +335,22 @@ const server = app.listen(PORT, () => {
         console.error("[Email] Startup SMTP verify error:", err.message);
         if (err.stack) console.error(err.stack);
     });
+
+    const { isHmsConfigured, publicWebhookUrl } = require("./src/services/hmsTokenService");
+    if (!isHmsConfigured()) {
+        console.warn(
+            "[100MS] Credentials missing. Live rooms are disabled until HMS_APP_ACCESS_KEY, HMS_APP_SECRET, and HMS_TEMPLATE_ID are set."
+        );
+    } else {
+        const webhookUrl = publicWebhookUrl();
+        if (webhookUrl) {
+            console.log(`[100MS] Webhook endpoint: ${webhookUrl}`);
+        } else {
+            console.warn(
+                "[100MS] No public backend URL detected. Configure the 100ms dashboard webhook to POST /api/100ms/webhook on this service."
+            );
+        }
+    }
 
     startReminderScheduler();
 });
